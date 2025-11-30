@@ -1,17 +1,22 @@
-version: '3.8'
-
 services:
   carl:
     build: .
+    env_file:
+      - .env
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs
     environment:
       - NODE_ENV=production
+      # AI Configuration (Priority: Gemini > Groq > OpenAI)
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-2.0-flash}
+      - GROQ_API_KEY=${GROQ_API_KEY}
+      - GROQ_MODEL=${GROQ_MODEL:-llama-3.1-70b-versatile}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o}
-      - OPENAI_MAX_TOKENS=${OPENAI_MAX_TOKENS:-500}
-      - OPENAI_TEMPERATURE=${OPENAI_TEMPERATURE:-0.3}
+      - AI_MAX_TOKENS=${AI_MAX_TOKENS:-500}
+      - AI_TEMPERATURE=${AI_TEMPERATURE:-0.3}
       - DATABASE_PATH=/app/data/carl.db
       - GOOGLE_SERVICE_ACCOUNT_JSON=${GOOGLE_SERVICE_ACCOUNT_JSON}
       - GOOGLE_CALENDAR_ID=${GOOGLE_CALENDAR_ID:-primary}

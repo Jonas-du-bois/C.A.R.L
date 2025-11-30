@@ -1,6 +1,6 @@
-FROM node:18-slim
+FROM node:20-slim
 
-# Install dependencies for Puppeteer
+# Install dependencies for Puppeteer and native modules compilation
 RUN apt-get update && apt-get install -y \
     chromium \
     libnss3 \
@@ -8,12 +8,14 @@ RUN apt-get update && apt-get install -y \
     libharfbuzz-bin \
     ca-certificates \
     fonts-freefont-ttf \
+    build-essential \
+    python3 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
 COPY package*.json ./
-RUN npm ci --only=production
+RUN npm ci --omit=dev
 
 COPY . .
 

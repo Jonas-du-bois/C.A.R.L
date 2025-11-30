@@ -6,12 +6,16 @@ export class CronService {
   #telegram;
   #logger;
   #config;
+  #aiService;
+  #calendarService;
 
-  constructor(config, repository, telegramService, logger) {
+  constructor(config, repository, telegramService, logger, aiService = null, calendarService = null) {
     this.#config = config;
     this.#repo = repository;
     this.#telegram = telegramService;
     this.#logger = logger;
+    this.#aiService = aiService;
+    this.#calendarService = calendarService;
     this.init();
   }
 
@@ -35,21 +39,56 @@ export class CronService {
     this.#job.start();
   }
 
-  async generateAndSendReport() {
-    const yesterday = new Date(Date.now() - 86400000);
-    const dateStr = yesterday.toISOString().split('T')[0];
+  /**
+   * Génère et envoie le rapport - appelable manuellement ou par cron
+   * @param {number} hoursAgo - Période à couvrir (défaut: 24h)
+   */
+  async generateAndSendReport(hoursAgo = 24) {
+    this.#logger.info('Generating report...', { hoursAgo });
 
-    const stats = this.#repo.generateDailyStats(dateStr);
+    // Récupérer les stats rapides (sans IA)
+    const stats = this.#repo.getQuickStats(hoursAgo);
+    
+    // Récupérer tous les messages de la période
+    const messages = this.#repo.getMessagesForReport(hoursAgo);
 
-    const report = `📊 Daily Report for ${yesterday.toLocaleDateString()}
+    // Récupérer le résumé de l'agenda si disponible
+    let agendaSummary = null;
+    if (this.#calendarService?.isConfigured) {
+      try {
+        agendaSummary = await this.#calendarService.getAgendaSummary();
+      } catch (error) {
+        this.#logger.error('Failed to get agenda summary', { error: error.message });
+      }
+    }
 
-Total Messages: ${stats.total || 0}
-🚨 Urgent: ${stats.urgent || 0}
-💼 Professional: ${stats.professional || 0}
-🏠 Personal: ${stats.personal || 0}
-🗑️ Spam: ${stats.spam || 0}`;
+    let report;
+    
+    if (this.#aiService) {
+      // Générer le rapport avec IA (1 seule requête pour tous les messages)
+      report = await this.#aiService.generateFullReport(messages, stats, agendaSummary, this.#calendarService);
+    } else {
+      // Fallback sans IA
+      report = this.#formatBasicReport(stats, messages);
+    }
 
-    this.#logger.info('Generated daily report', { stats });
     await this.#telegram.sendMessage(report);
+    this.#logger.info('Report sent', { messagesCount: messages.length });
+    
+    return report;
+  }
+
+  #formatBasicReport(stats, messages) {
+    let report = `📊 <b>Rapport C.A.R.L.</b>\n\n`;
+    report += `📈 <b>Statistiques:</b>\n`;
+    report += `• Messages reçus: ${stats.received}\n`;
+    report += `• Réponses: ${stats.sent}\n`;
+    report += `• Contacts: ${stats.contacts}\n`;
+    
+    if (stats.errors > 0) {
+      report += `• ⚠️ Erreurs: ${stats.errors}\n`;
+    }
+
+    return report;
   }
 }
