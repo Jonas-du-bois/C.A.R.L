@@ -5,9 +5,12 @@ export class CalendarService {
   #config;
   #isConfigured = false;
 
-  constructor(config) {
+  constructor(config, calendarClient = null) {
     this.#config = config;
-    if (this.#config.features.enableCalendar && this.#config.google.serviceAccountJson) {
+    if (calendarClient) {
+      this.#calendar = calendarClient;
+      this.#isConfigured = true;
+    } else if (this.#config.features.enableCalendar && this.#config.google.serviceAccountJson) {
       try {
         const credentials = JSON.parse(this.#config.google.serviceAccountJson);
         const auth = new google.auth.GoogleAuth({
@@ -338,21 +341,57 @@ export class CalendarService {
     });
   }
 
-  async createEvent(details) {
+  async createEvent(input) {
     if (!this.#calendar) {
       return 'Calendar integration disabled or not configured';
     }
 
     try {
-      const now = new Date();
-      const start = new Date(now.setDate(now.getDate() + 1));
-      start.setHours(10, 0, 0, 0);
-      const end = new Date(start);
-      end.setHours(11, 0, 0, 0);
+      let summary, start, end, description;
+
+      if (typeof input === 'string') {
+        // Fallback for string input (legacy behavior)
+        const now = new Date();
+        start = new Date(now.setDate(now.getDate() + 1));
+        start.setHours(10, 0, 0, 0);
+        end = new Date(start);
+        end.setHours(11, 0, 0, 0);
+        summary = `Meeting: ${input.slice(0, 50)}...`;
+        description = input;
+      } else if (typeof input === 'object' && input !== null) {
+        // Structured input
+        summary = input.summary || 'Nouvel événement';
+        description = input.description || '';
+
+        if (input.start) {
+          start = new Date(input.start);
+        } else {
+          // Default start tomorrow 10am if not provided
+          const now = new Date();
+          start = new Date(now.setDate(now.getDate() + 1));
+          start.setHours(10, 0, 0, 0);
+        }
+
+        if (input.end) {
+          end = new Date(input.end);
+        } else if (input.duration) {
+          end = new Date(start.getTime() + input.duration * 60000);
+        } else {
+          // Default duration 1 hour
+          end = new Date(start.getTime() + 60 * 60000);
+        }
+      } else {
+        throw new Error('Invalid input for createEvent');
+      }
+
+      // Check for valid dates
+      if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+        throw new Error('Invalid date format');
+      }
 
       const event = {
-        summary: `Meeting: ${details.slice(0, 50)}...`,
-        description: details,
+        summary,
+        description,
         start: { dateTime: start.toISOString() },
         end: { dateTime: end.toISOString() },
       };
