@@ -17,9 +17,19 @@ export class SQLiteDatabase {
         message_id TEXT PRIMARY KEY,
         sender_id TEXT NOT NULL,
         body TEXT NOT NULL,
-        timestamp INTEGER NOT NULL
+        timestamp INTEGER NOT NULL,
+        urgency TEXT DEFAULT 'low',
+        category TEXT DEFAULT 'other'
       )
     `);
+
+    // Migration for existing tables (if any)
+    try {
+      this.#db.exec("ALTER TABLE conversations ADD COLUMN urgency TEXT DEFAULT 'low'");
+      this.#db.exec("ALTER TABLE conversations ADD COLUMN category TEXT DEFAULT 'other'");
+    } catch (e) {
+      // Ignore error if columns already exist
+    }
   }
 
   prepare(sql) {

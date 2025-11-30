@@ -24,17 +24,33 @@ export class MessageHandler {
 
       await this.#whatsapp.sendStateTyping(rawMessage.from);
 
+      // Sanitize input (although we store raw, analysis benefits from clean text)
+      // Actually, standard practice: Save raw, analyze raw/clean.
+      // The sanitization utility was requested. Let's use it for analysis context?
+      // Or just basic cleanup.
+
       const context = this.#repo.findRecent(rawMessage.from, 3);
       const analysis = await this.#openAI.analyzeMessage(rawMessage, context);
 
+      // Update message with analysis results
+      const analyzedMessage = rawMessage.withAnalysis(analysis);
+
+      // Handle Actions
       if (analysis.action === 'calendar_event') {
-        await this.#calendar.createEvent(rawMessage.body);
+        const result = await this.#calendar.createEvent(rawMessage.body);
+        // Optionally append result to reply?
+        // analysis.reply += `\n(${result})`;
       }
 
       await this.#whatsapp.sendMessage(rawMessage.from, analysis.reply);
-      this.#repo.save(rawMessage);
+      this.#repo.save(analyzedMessage);
 
-      this.#logger.info('Message processed', { from: rawMessage.from, action: analysis.action });
+      this.#logger.info('Message processed', {
+        from: rawMessage.from,
+        action: analysis.action,
+        urgency: analysis.urgency,
+        category: analysis.category
+      });
     } catch (error) {
       this.#logger.error('Failed to handle message', { error });
     }

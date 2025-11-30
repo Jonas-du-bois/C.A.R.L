@@ -5,6 +5,8 @@ import { MessageRepository } from '../repositories/MessageRepository.js';
 import { OpenAIService } from '../services/OpenAIService.js';
 import { WhatsAppService } from '../services/WhatsAppService.js';
 import { CalendarService } from '../services/CalendarService.js';
+import { TelegramService } from '../services/TelegramService.js';
+import { CronService } from '../services/CronService.js';
 import { MessageHandler } from '../handlers/MessageHandler.js';
 import { GatekeeperHandler } from '../handlers/GatekeeperHandler.js';
 import { Message } from '../domain/Message.js';
@@ -26,6 +28,9 @@ export class Application {
       const messageRepo = new MessageRepository(this.#db);
       const openAIService = new OpenAIService(this.#config);
       const calendarService = new CalendarService(this.#config);
+      const telegramService = new TelegramService(this.#config);
+      const cronService = new CronService(this.#config, messageRepo, telegramService, this.#logger);
+
       this.#whatsapp = new WhatsAppService(this.#config);
       const gatekeeper = new GatekeeperHandler();
 

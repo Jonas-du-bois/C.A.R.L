@@ -5,9 +5,11 @@ const SCHEMA = {
   type: "object",
   properties: {
     reply: { type: "string" },
-    action: { type: "string", enum: ["none", "calendar_event"] }
+    action: { type: "string", enum: ["none", "calendar_event"] },
+    urgency: { type: "string", enum: ["low", "medium", "high", "critical"] },
+    category: { type: "string", enum: ["professional", "personal", "spam", "other"] }
   },
-  required: ["reply", "action"],
+  required: ["reply", "action", "urgency", "category"],
   additionalProperties: false
 };
 
