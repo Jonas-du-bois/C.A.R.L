@@ -1,0 +1,13 @@
+version: '3.8'
+
+services:
+  carl:
+    build: .
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_MODEL=${OPENAI_MODEL}
+      - DATABASE_PATH=/app/data/carl.db
+    restart: always
