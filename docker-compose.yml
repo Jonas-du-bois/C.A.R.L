@@ -1,0 +1,36 @@
+version: '3.8'
+
+services:
+  carl:
+    build: .
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    environment:
+      - NODE_ENV=production
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o}
+      - OPENAI_MAX_TOKENS=${OPENAI_MAX_TOKENS:-500}
+      - OPENAI_TEMPERATURE=${OPENAI_TEMPERATURE:-0.3}
+      - DATABASE_PATH=/app/data/carl.db
+      - GOOGLE_SERVICE_ACCOUNT_JSON=${GOOGLE_SERVICE_ACCOUNT_JSON}
+      - GOOGLE_CALENDAR_ID=${GOOGLE_CALENDAR_ID:-primary}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - TELEGRAM_ADMIN_ID=${TELEGRAM_ADMIN_ID}
+      - ENABLE_DAILY_BRIEFING=${ENABLE_DAILY_BRIEFING:-true}
+      - DAILY_BRIEFING_TIME=${DAILY_BRIEFING_TIME:-0 8 * * *}
+      - ENABLE_AUTO_RESPONSE=${ENABLE_AUTO_RESPONSE:-true}
+      - ENABLE_CALENDAR_INTEGRATION=${ENABLE_CALENDAR_INTEGRATION:-true}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    healthcheck:
+      test: ["CMD", "node", "-e", "process.exit(0)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
