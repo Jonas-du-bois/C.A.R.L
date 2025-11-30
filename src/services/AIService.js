@@ -36,7 +36,12 @@ Your output MUST be a valid JSON object with these exact fields:
   "category": "professional" | "personal" | "spam" | "other",
   "intent": "greeting" | "question" | "request" | "information" | "complaint" | "other",
   "sentiment": "positive" | "neutral" | "negative" | "mixed",
-  "confidence": 0.0 to 1.0
+  "confidence": 0.0 to 1.0,
+  "event_details": {
+    "summary": "Title of the event (optional, required if action is calendar_event)",
+    "start": "ISO 8601 start time (optional, required if action is calendar_event)",
+    "duration": "Duration in minutes (optional, required if action is calendar_event)"
+  }
 }
 
 IMPORTANT: Return ONLY the JSON object, no additional text or markdown.`;
@@ -50,7 +55,16 @@ const JSON_SCHEMA = {
     category: { type: "string", enum: ["professional", "personal", "spam", "other"] },
     intent: { type: "string", enum: ["greeting", "question", "request", "information", "complaint", "other"] },
     sentiment: { type: "string", enum: ["positive", "neutral", "negative", "mixed"] },
-    confidence: { type: "number", minimum: 0, maximum: 1 }
+    confidence: { type: "number", minimum: 0, maximum: 1 },
+    event_details: {
+      type: "object",
+      properties: {
+        summary: { type: "string", description: "Title of the event" },
+        start: { type: "string", description: "ISO 8601 start time" },
+        duration: { type: "number", description: "Duration in minutes" }
+      },
+      required: ["summary", "start", "duration"]
+    }
   },
   required: ["reply", "action", "urgency", "category", "confidence"]
 };
@@ -230,7 +244,8 @@ export class AIService {
         intent: parsed.intent || 'other',
         sentiment: parsed.sentiment || 'neutral',
         confidence: typeof parsed.confidence === 'number' 
-          ? Math.min(1, Math.max(0, parsed.confidence)) : 0.5
+          ? Math.min(1, Math.max(0, parsed.confidence)) : 0.5,
+        event_details: parsed.event_details || null
       };
     } catch (error) {
       console.error('Failed to parse AI response:', text);

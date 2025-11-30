@@ -174,7 +174,10 @@ export class MessageHandler {
       this.#repo.createAction(messageDbId, 'calendar_event', { body: rawMessage.body });
       
       try {
-        const result = await this.#calendar.createEvent(rawMessage.body);
+        // Use structured event details if available, otherwise fallback to message body
+        const eventData = analysis.event_details || rawMessage.body;
+        const result = await this.#calendar.createEvent(eventData);
+
         this.#repo.updateActionStatus(messageDbId, 'completed', JSON.stringify(result));
         this.#logger.info('Calendar event created', { result });
       } catch (error) {
