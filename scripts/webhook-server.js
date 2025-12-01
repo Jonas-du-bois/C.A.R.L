@@ -9,15 +9,20 @@
  * 3. pm2 start webhook-server.js --name carl-webhook
  */
 
-const http = require('http');
-const crypto = require('crypto');
-const { exec, spawn } = require('child_process');
-const fs = require('fs');
-const path = require('path');
+import http from 'http';
+import crypto from 'crypto';
+import { exec, spawn } from 'child_process';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+// __dirname equivalent for ES modules
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // Configuration
 const PORT = process.env.WEBHOOK_PORT || 9000;
-const WEBHOOK_SECRET = process.env.WEBHOOK_SECRET || 'your-webhook-secret-here';
+let WEBHOOK_SECRET = process.env.WEBHOOK_SECRET || 'your-webhook-secret-here';
 const DEPLOY_SCRIPT = path.join(__dirname, 'deploy.sh');
 const DEPLOY_DIR = process.env.DEPLOY_DIR || '/mnt/storage/dev/carl';
 const LOG_FILE = path.join(DEPLOY_DIR, 'logs', 'webhook.log');
@@ -29,7 +34,13 @@ if (fs.existsSync(envPath)) {
     envContent.split('\n').forEach(line => {
         const [key, ...valueParts] = line.split('=');
         if (key && !key.startsWith('#')) {
-            process.env[key.trim()] = valueParts.join('=').trim();
+            const trimmedKey = key.trim();
+            const value = valueParts.join('=').trim();
+            process.env[trimmedKey] = value;
+            // Mettre à jour WEBHOOK_SECRET si trouvé
+            if (trimmedKey === 'WEBHOOK_SECRET') {
+                WEBHOOK_SECRET = value;
+            }
         }
     });
 }
