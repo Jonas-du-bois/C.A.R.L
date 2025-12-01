@@ -338,6 +338,14 @@ Return a JSON object with a single "summary" field containing a concise French s
     }
   }
 
+  // ============================================
+  // CONSTANTES DE CONFIGURATION
+  // ============================================
+  
+  static LARGE_CONVERSATION_THRESHOLD = 10; // Messages par conversation avant pré-traitement
+  static MAX_TOTAL_MESSAGES_DIRECT = 50;    // Total messages avant mode adaptatif
+  static MAX_CONVERSATIONS_PER_REQUEST = 15; // Limite de conversations par requête
+
   /**
    * Formate les conversations de manière lisible pour l'IA
    * Chaque conversation est présentée comme un fil de discussion
@@ -346,7 +354,7 @@ Return a JSON object with a single "summary" field containing a concise French s
    */
   #formatConversationsForAI(conversations) {
     // Limiter à 15 conversations max pour éviter de dépasser les tokens
-    const limitedConversations = conversations.slice(0, 15);
+    const limitedConversations = conversations.slice(0, AIService.MAX_CONVERSATIONS_PER_REQUEST);
     
     return limitedConversations.map((conv, index) => {
       const messagesFormatted = conv.messages.map(msg => {
@@ -387,8 +395,128 @@ ${messagesFormatted}
   }
 
   /**
+   * Pré-traite une grosse conversation pour en extraire l'essentiel
+   * @param {Object} conv - Conversation à pré-traiter
+   * @returns {Object} Résumé de la conversation
+   */
+  async #preprocessLargeConversation(conv) {
+    const messagesText = conv.messages.map(msg => {
+      const direction = msg.direction === 'incoming' ? '→' : '←';
+      const sender = msg.direction === 'incoming' ? conv.contactName : 'Jonas';
+      return `${direction} ${sender}: "${msg.body}"`;
+    }).join('\n');
+
+    const prompt = `Analyse cette conversation et génère un JSON résumé:
+
+CONVERSATION AVEC: ${conv.contactName}
+Messages: ${conv.stats.incoming} reçus, ${conv.stats.outgoing} envoyés
+
+${messagesText}
+
+Génère un JSON avec:
+{
+  "contact": "${conv.contactName}",
+  "resume": "Résumé en 2-3 phrases du contenu de la conversation",
+  "categorie": "professionnel/personnel/sport_loisirs/benevolat/spam",
+  "urgence": "critique/haute/moyenne/basse",
+  "actions_requises": ["Liste des actions à faire suite à cette conversation"],
+  "evenements_mentionnes": [{"activite": "...", "quand": "...", "details": "..."}],
+  "taches_extraites": [{"titre": "...", "description": "...", "priorite": "haute/moyenne/basse"}],
+  "reponse_suggeree": "Réponse suggérée si nécessaire, sinon null"
+}`;
+
+    try {
+      switch (this.#provider) {
+        case 'gemini':
+          return await this.#callGeminiCompact(prompt);
+        case 'openai':
+        case 'groq':
+          return await this.#callChatCompact(prompt);
+        default:
+          return this.#fallbackConversationSummary(conv);
+      }
+    } catch (error) {
+      console.error(`Failed to preprocess conversation with ${conv.contactName}:`, error);
+      return this.#fallbackConversationSummary(conv);
+    }
+  }
+
+  /**
+   * Appel Gemini compact pour pré-traitement
+   */
+  async #callGeminiCompact(prompt) {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${this.#model}:generateContent?key=${this.#apiKey}`;
+    
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: {
+          temperature: 0.5,
+          maxOutputTokens: 1000,
+          responseMimeType: "application/json"
+        }
+      })
+    });
+
+    if (!response.ok) throw new Error('Gemini compact API error');
+    const data = await response.json();
+    const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+    return JSON.parse(text);
+  }
+
+  /**
+   * Appel Chat API compact pour pré-traitement
+   */
+  async #callChatCompact(prompt) {
+    const endpoint = this.#provider === 'groq' 
+      ? 'https://api.groq.com/openai/v1/chat/completions'
+      : 'https://api.openai.com/v1/chat/completions';
+
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${this.#apiKey}`
+      },
+      body: JSON.stringify({
+        model: this.#model,
+        messages: [{ role: 'user', content: prompt }],
+        response_format: { type: 'json_object' },
+        max_tokens: 1000
+      })
+    });
+
+    if (!response.ok) throw new Error('Chat compact API error');
+    const data = await response.json();
+    return JSON.parse(data.choices[0].message.content);
+  }
+
+  /**
+   * Fallback si l'IA échoue pour le pré-traitement
+   */
+  #fallbackConversationSummary(conv) {
+    return {
+      contact: conv.contactName,
+      resume: `Conversation avec ${conv.messages.length} messages (${conv.stats.incoming} reçus, ${conv.stats.outgoing} envoyés)`,
+      categorie: Object.keys(conv.stats.categories)[0] || 'autre',
+      urgence: Object.keys(conv.stats.urgencies)[0] || 'basse',
+      actions_requises: [],
+      evenements_mentionnes: [],
+      taches_extraites: [],
+      reponse_suggeree: null
+    };
+  }
+
+  /**
    * Génère un rapport complet et actionnable à partir des conversations
    * Style: Assistant personnel type Jarvis
+   * 
+   * STRATÉGIE ADAPTATIVE:
+   * - Si total messages ≤ 50 → Traitement direct (1 requête)
+   * - Si conversations ≥ 10 messages → Pré-traitement individuel puis agrégation
+   * 
    * @param {Array} conversations - Conversations groupées par contact
    * @param {Object} stats - Statistiques
    * @param {Object} agendaSummary - Résumé de l'agenda Google (optionnel)
@@ -399,12 +527,50 @@ ${messagesFormatted}
       return this.#formatEmptyReport(stats, agendaSummary);
     }
 
-    // Formater les conversations de manière claire pour l'IA
-    const conversationsText = this.#formatConversationsForAI(conversations);
-    
     // Calculer les stats globales
     const totalMessages = conversations.reduce((sum, c) => sum + c.messages.length, 0);
     const totalContacts = conversations.length;
+    
+    // Séparer grosses et petites conversations
+    const largeConversations = conversations.filter(c => 
+      c.messages.length >= AIService.LARGE_CONVERSATION_THRESHOLD
+    );
+    const smallConversations = conversations.filter(c => 
+      c.messages.length < AIService.LARGE_CONVERSATION_THRESHOLD
+    );
+    
+    console.log(`[AIService] Report strategy: ${totalMessages} total messages, ` +
+      `${largeConversations.length} large convs, ${smallConversations.length} small convs`);
+
+    let conversationsData;
+    let preprocessedSummaries = [];
+
+    // STRATÉGIE ADAPTATIVE
+    if (totalMessages > AIService.MAX_TOTAL_MESSAGES_DIRECT && largeConversations.length > 0) {
+      // MODE ADAPTATIF: Pré-traiter les grosses conversations
+      console.log(`[AIService] Adaptive mode: preprocessing ${largeConversations.length} large conversations`);
+      
+      // Pré-traiter chaque grosse conversation en parallèle (max 3 simultanées)
+      const preprocessPromises = largeConversations.map(conv => 
+        this.#preprocessLargeConversation(conv)
+      );
+      
+      try {
+        preprocessedSummaries = await Promise.all(preprocessPromises);
+        console.log(`[AIService] Preprocessed ${preprocessedSummaries.length} conversations`);
+      } catch (error) {
+        console.error('[AIService] Preprocessing failed, falling back to direct mode:', error);
+        // Fallback: traiter comme des petites conversations
+        preprocessedSummaries = largeConversations.map(c => this.#fallbackConversationSummary(c));
+      }
+
+      // Formater les petites conversations normalement
+      conversationsData = this.#formatConversationsForAI(smallConversations);
+    } else {
+      // MODE DIRECT: Tout envoyer en une fois
+      console.log(`[AIService] Direct mode: sending all ${totalMessages} messages`);
+      conversationsData = this.#formatConversationsForAI(conversations);
+    }
     
     // Stats par contact pour le contexte
     const contactSummary = conversations.slice(0, 10).map(c => 
@@ -429,14 +595,38 @@ CRÉNEAUX DISPONIBLES (min 1h30):
 ${slotsStr}`;
     }
 
+    // Préparer la section des résumés pré-traités (si mode adaptatif)
+    let preprocessedSection = '';
+    if (preprocessedSummaries.length > 0) {
+      preprocessedSection = `
+═══════════════════════════════════════════════════════════════════════
+RÉSUMÉS DES CONVERSATIONS IMPORTANTES (pré-analysées)
+═══════════════════════════════════════════════════════════════════════
+
+${preprocessedSummaries.map((summary, i) => `
+📌 CONVERSATION ${i + 1}: ${summary.contact}
+   Résumé: ${summary.resume}
+   Catégorie: ${summary.categorie} | Urgence: ${summary.urgence}
+   ${summary.actions_requises?.length ? `Actions: ${summary.actions_requises.join(', ')}` : ''}
+   ${summary.evenements_mentionnes?.length ? `Événements: ${JSON.stringify(summary.evenements_mentionnes)}` : ''}
+   ${summary.taches_extraites?.length ? `Tâches: ${JSON.stringify(summary.taches_extraites)}` : ''}
+   ${summary.reponse_suggeree ? `Réponse suggérée: "${summary.reponse_suggeree}"` : ''}
+`).join('\n')}
+═══════════════════════════════════════════════════════════════════════
+`;
+    }
+
     const prompt = `Tu es C.A.R.L., l'assistant personnel intelligent de Jonas - comme Jarvis pour Tony Stark.
 Tu t'adresses DIRECTEMENT à Jonas avec un ton professionnel mais chaleureux, légèrement spirituel.
-
+${preprocessedSummaries.length > 0 ? `
+NOTE: Certaines conversations importantes ont été pré-analysées. Intègre ces résumés dans ton rapport final.
+` : ''}
+${preprocessedSection}
 ═══════════════════════════════════════════════════════════════════════
-CONVERSATIONS DE LA JOURNÉE (groupées par contact)
+${preprocessedSummaries.length > 0 ? 'AUTRES CONVERSATIONS (plus courtes)' : 'CONVERSATIONS DE LA JOURNÉE (groupées par contact)'}
 ═══════════════════════════════════════════════════════════════════════
 
-${conversationsText}
+${conversationsData}
 
 ═══════════════════════════════════════════════════════════════════════
 

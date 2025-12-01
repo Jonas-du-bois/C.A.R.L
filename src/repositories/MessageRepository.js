@@ -150,6 +150,21 @@ export class MessageRepository {
   }
 
   /**
+   * Récupère les derniers messages pour diagnostic (debug)
+   * @param {number} limit - Nombre de messages à récupérer
+   * @returns {Array} Messages avec infos complètes
+   */
+  getRecentMessagesDebug(limit = 10) {
+    return this.#db.prepare(`
+      SELECT m.*, c.phone_number, c.push_name, c.display_name
+      FROM messages m
+      JOIN contacts c ON m.contact_id = c.id
+      ORDER BY m.received_at DESC
+      LIMIT ?
+    `).all(limit);
+  }
+
+  /**
    * Récupère les messages récents pour le contexte IA
    */
   findRecent(phoneNumber, limit = 10) {
