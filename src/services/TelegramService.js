@@ -192,6 +192,66 @@ export class TelegramService {
   async sendMessage(message, options = {}) {
     if (!this.#botToken || !this.#adminId) return;
 
+    // Telegram limite les messages à 4096 caractères
+    const MAX_LENGTH = 4000; // Marge de sécurité
+    
+    // Si le message est trop long, le découper en parties
+    if (message.length > MAX_LENGTH) {
+      const parts = this.#splitMessage(message, MAX_LENGTH);
+      for (let i = 0; i < parts.length; i++) {
+        const partOptions = i === parts.length - 1 ? options : {}; // Boutons seulement sur le dernier message
+        await this.#sendSingleMessage(parts[i], partOptions);
+        // Petite pause entre les messages pour éviter le rate limiting
+        if (i < parts.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
+      }
+      return;
+    }
+
+    await this.#sendSingleMessage(message, options);
+  }
+
+  /**
+   * Découpe un message long en parties respectant la limite Telegram
+   * Essaie de couper aux sauts de ligne pour garder la lisibilité
+   */
+  #splitMessage(message, maxLength) {
+    const parts = [];
+    let remaining = message;
+
+    while (remaining.length > 0) {
+      if (remaining.length <= maxLength) {
+        parts.push(remaining);
+        break;
+      }
+
+      // Chercher le dernier saut de ligne avant la limite
+      let cutIndex = remaining.lastIndexOf('\n', maxLength);
+      
+      // Si pas de saut de ligne trouvé, chercher un espace
+      if (cutIndex === -1 || cutIndex < maxLength * 0.5) {
+        cutIndex = remaining.lastIndexOf(' ', maxLength);
+      }
+      
+      // En dernier recours, couper brutalement
+      if (cutIndex === -1 || cutIndex < maxLength * 0.5) {
+        cutIndex = maxLength;
+      }
+
+      parts.push(remaining.substring(0, cutIndex));
+      remaining = remaining.substring(cutIndex).trimStart();
+    }
+
+    // Ajouter un indicateur de partie si plusieurs messages
+    if (parts.length > 1) {
+      return parts.map((part, i) => `📄 (${i + 1}/${parts.length})\n\n${part}`);
+    }
+
+    return parts;
+  }
+
+  async #sendSingleMessage(message, options = {}) {
     try {
       const url = `https://api.telegram.org/bot${this.#botToken}/sendMessage`;
       const body = {

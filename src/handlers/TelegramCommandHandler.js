@@ -70,6 +70,7 @@ export class TelegramCommandHandler {
    */
   registerAll() {
     this.#registerRapportCommand();
+    this.#registerBriefCommand();
     this.#registerStatsCommand();
     this.#registerStatusCommand();
     this.#registerConnectCommand();
@@ -95,6 +96,22 @@ export class TelegramCommandHandler {
     this.#telegram.onCommand('rapport', async () => {
       await this.#telegram.sendMessage('⏳ Génération du rapport de la journée en cours...');
       await this.#cronService.generateAndSendReport();
+    });
+  }
+
+  /**
+   * /brief - Résumé court et essentiel de la journée
+   */
+  #registerBriefCommand() {
+    this.#telegram.onCommand('brief', async () => {
+      await this.#telegram.sendMessage('⏳ Génération du résumé express...');
+      
+      try {
+        const briefReport = await this.#generateBriefReport();
+        await this.#telegram.sendMessage(briefReport);
+      } catch (error) {
+        await this.#telegram.sendMessage(`❌ Erreur: ${error.message}`);
+      }
     });
   }
 
@@ -194,8 +211,9 @@ export class TelegramCommandHandler {
       const helpMessage = 
         '🤖 <b>Commandes C.A.R.L.</b>\n\n' +
         '<b>📊 Rapports</b>\n' +
-        '/rapport - Rapport complet avec IA\n' +
-        '/stats - Statistiques rapides\n\n' +
+        '/brief - ⚡ Résumé express (essentiel)\n' +
+        '/rapport - 📋 Rapport complet avec IA\n' +
+        '/stats - 📈 Statistiques rapides\n\n' +
         '<b>📱 WhatsApp</b>\n' +
         '/status - État du système\n' +
         '/connect - Obtenir le QR code\n' +
@@ -569,5 +587,95 @@ export class TelegramCommandHandler {
     const h = Math.floor(seconds / 3600);
     const m = Math.floor((seconds % 3600) / 60);
     return `${h}h ${m}m`;
+  }
+
+  /**
+   * Génère un rapport court et essentiel
+   * @returns {string} Rapport formaté
+   */
+  async #generateBriefReport() {
+    const stats = this.#messageRepo.getQuickStats();
+    const conversations = this.#messageRepo.getConversationsForReport(5);
+    const calendarService = this.#cronService.getCalendarService();
+    
+    const now = new Date().toLocaleDateString('fr-CH', { 
+      weekday: 'long', 
+      day: 'numeric', 
+      month: 'long',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+
+    let brief = `⚡ <b>RÉSUMÉ EXPRESS</b>\n`;
+    brief += `📅 ${now}\n`;
+    brief += `━━━━━━━━━━━━━━━━━━━━\n\n`;
+
+    // Stats rapides
+    const total = stats.received + stats.sent;
+    brief += `📊 <b>Activité:</b> ${total} messages (${stats.received}↓ ${stats.sent}↑)\n`;
+    brief += `👥 <b>Contacts:</b> ${stats.contacts} actifs\n\n`;
+
+    // Messages urgents/importants
+    if (conversations.conversations && conversations.conversations.length > 0) {
+      const urgentConvs = conversations.conversations.filter(c => 
+        c.stats.urgencies?.high || c.stats.urgencies?.critical
+      );
+      
+      if (urgentConvs.length > 0) {
+        brief += `🚨 <b>URGENT (${urgentConvs.length}):</b>\n`;
+        urgentConvs.slice(0, 3).forEach(c => {
+          const lastMsg = c.messages[c.messages.length - 1];
+          const preview = (lastMsg?.body || '').substring(0, 60);
+          brief += `• ${c.contactName}: "${preview}${preview.length >= 60 ? '...' : ''}"\n`;
+        });
+        brief += '\n';
+      }
+
+      // Top 5 contacts les plus actifs avec aperçu
+      brief += `💬 <b>CONVERSATIONS:</b>\n`;
+      conversations.conversations.slice(0, 5).forEach(c => {
+        const lastMsg = c.messages[c.messages.length - 1];
+        const preview = (lastMsg?.body || '').substring(0, 40);
+        const icon = lastMsg?.direction === 'outgoing' ? '↩️' : '💬';
+        brief += `${icon} <b>${c.contactName}</b> (${c.messages.length})\n`;
+        brief += `   └ "${preview}${preview.length >= 40 ? '...' : ''}"\n`;
+      });
+      brief += '\n';
+    }
+
+    // Prochains événements agenda
+    if (calendarService?.isConfigured) {
+      try {
+        const events = await calendarService.getUpcomingEvents(2);
+        if (events.length > 0) {
+          brief += `📅 <b>AGENDA:</b>\n`;
+          events.slice(0, 4).forEach(e => {
+            const start = new Date(e.start?.dateTime || e.start?.date);
+            const timeStr = start.toLocaleTimeString('fr-CH', { hour: '2-digit', minute: '2-digit' });
+            const dayStr = start.toLocaleDateString('fr-CH', { weekday: 'short', day: 'numeric' });
+            brief += `• ${dayStr} ${timeStr} - ${e.summary}\n`;
+          });
+          brief += '\n';
+        }
+      } catch (e) {
+        // Ignorer les erreurs calendar
+      }
+    }
+
+    // Actions suggérées
+    const lastReport = this.#cronService.getLastReportData();
+    const pendingTasks = lastReport?.taches?.length || 0;
+    const pendingEvents = lastReport?.agenda?.evenements_proposes?.length || 0;
+    
+    if (pendingTasks > 0 || pendingEvents > 0) {
+      brief += `✅ <b>À FAIRE:</b>\n`;
+      if (pendingTasks > 0) brief += `• ${pendingTasks} tâche(s) en attente\n`;
+      if (pendingEvents > 0) brief += `• ${pendingEvents} événement(s) à planifier\n`;
+      brief += `→ /tasks pour gérer\n`;
+    }
+
+    brief += `\n💡 /rapport pour le détail complet`;
+
+    return brief;
   }
 }
