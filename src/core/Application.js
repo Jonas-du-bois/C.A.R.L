@@ -132,7 +132,30 @@ export class Application {
             quotedMessageId: msg.hasQuotedMsg ? msg._data?.quotedMsgId : null
           };
 
-          // Enqueue message processing with sender-based ordering
+          // Mode économique : sauvegarder uniquement, sans analyse IA
+          if (!this.#config.features.enableAutoResponse) {
+            // Sauvegarder le message sans analyse IA (économise les requêtes API)
+            const contact = messageRepo.findOrCreateContact(message.from, {
+              pushName: messageMetadata.pushName,
+              displayName: messageMetadata.displayName,
+              isGroup: messageMetadata.isGroup
+            });
+            
+            messageRepo.saveIncomingMessage(message, contact.id, {
+              mediaType: messageMetadata.mediaType,
+              mediaUrl: messageMetadata.mediaUrl,
+              isForwarded: messageMetadata.isForwarded,
+              isBroadcast: messageMetadata.isBroadcast,
+              quotedMessageId: messageMetadata.quotedMessageId
+            });
+            
+            this.#logger.debug('Message saved (no AI analysis - auto-response disabled)', {
+              from: message.from
+            });
+            return;
+          }
+
+          // Mode complet : analyse IA + réponse automatique
           this.#queue.enqueue(msg.from, async () => {
             await messageHandler.handle(message, messageMetadata);
           });
@@ -160,16 +183,16 @@ export class Application {
   }
 
   #setupTelegramCommands(messageRepo, aiService, cronService) {
-    // /rapport - Génère un rapport complet avec IA
+    // /rapport - Génère un rapport complet avec IA (journée en cours)
     this.#telegramService.onCommand('rapport', async () => {
-      await this.#telegramService.sendMessage('⏳ Génération du rapport en cours...');
-      await cronService.generateAndSendReport(24);
+      await this.#telegramService.sendMessage('⏳ Génération du rapport de la journée en cours...');
+      await cronService.generateAndSendReport();
     });
 
-    // /stats - Statistiques rapides sans IA
+    // /stats - Statistiques rapides sans IA (journée en cours)
     this.#telegramService.onCommand('stats', async () => {
-      const stats = messageRepo.getQuickStats(24);
-      const report = `📊 <b>Stats rapides (24h)</b>\n\n` +
+      const stats = messageRepo.getQuickStats();
+      const report = `📊 <b>Stats du jour</b>\n\n` +
         `📥 Messages reçus: ${stats.received}\n` +
         `📤 Réponses envoyées: ${stats.sent}\n` +
         `👥 Contacts: ${stats.contacts}\n` +
@@ -220,9 +243,239 @@ export class Application {
       }
     });
 
+    // /tasks - Afficher les tâches et événements à planifier avec boutons
+    this.#telegramService.onCommand('tasks', async () => {
+      const data = cronService.getLastReportData();
+      
+      if (!data) {
+        await this.#telegramService.sendMessage(
+          '📋 <b>Aucune donnée disponible</b>\n\n' +
+          'Générez d\'abord un rapport avec /rapport pour avoir des tâches à planifier.'
+        );
+        return;
+      }
+
+      const taches = data.taches || [];
+      const evenements = data.agenda?.evenements_proposes || [];
+      
+      if (taches.length === 0 && evenements.length === 0) {
+        await this.#telegramService.sendMessage(
+          '✅ <b>Rien à planifier !</b>\n\n' +
+          'Aucune tâche ou événement détecté dans le dernier rapport.'
+        );
+        return;
+      }
+
+      // Construire le message avec les items
+      let message = '📋 <b>TÂCHES & ÉVÉNEMENTS À PLANIFIER</b>\n';
+      message += '━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n';
+      message += '<i>Cliquez sur un bouton pour ajouter directement à votre agenda Google</i>\n\n';
+
+      const buttons = [];
+      let itemIndex = 0;
+
+      // Ajouter les tâches
+      if (taches.length > 0) {
+        message += '✅ <b>TÂCHES:</b>\n';
+        taches.forEach((t, i) => {
+          const prioIcon = { 'haute': '🔴', 'moyenne': '🟡', 'basse': '🟢' }[t.priorite] || '⚪';
+          message += `${prioIcon} ${t.titre}\n`;
+          if (t.deadline) message += `   ⏰ ${t.deadline}\n`;
+          message += '\n';
+          
+          buttons.push([{
+            text: `✅ ${t.titre.substring(0, 30)}${t.titre.length > 30 ? '...' : ''}`,
+            callback_data: `task_${itemIndex}`
+          }]);
+          itemIndex++;
+        });
+      }
+
+      // Ajouter les événements proposés
+      if (evenements.length > 0) {
+        message += '📅 <b>ÉVÉNEMENTS PROPOSÉS:</b>\n';
+        evenements.forEach((e, i) => {
+          message += `🗓️ ${e.activite} avec ${e.expediteur}\n`;
+          message += `   📍 ${e.quand}\n\n`;
+          
+          buttons.push([{
+            text: `📅 ${e.activite} - ${e.quand}`.substring(0, 40),
+            callback_data: `event_${itemIndex}`
+          }]);
+          itemIndex++;
+        });
+      }
+
+      await this.#telegramService.sendMessage(message, { inlineKeyboard: buttons });
+    });
+
+    // Handler pour les clics sur les boutons de tâches
+    this.#telegramService.onCallback('task_', async (data, query) => {
+      const index = parseInt(data.replace('task_', ''));
+      const reportData = cronService.getLastReportData();
+      const calendarService = cronService.getCalendarService();
+      
+      if (!reportData?.taches?.[index]) {
+        await this.#telegramService.sendMessage('❌ Tâche introuvable. Regénérez le rapport avec /rapport');
+        return;
+      }
+      
+      if (!calendarService?.isConfigured) {
+        await this.#telegramService.sendMessage('❌ Google Calendar non configuré');
+        return;
+      }
+
+      const tache = reportData.taches[index];
+      
+      // Créer une TÂCHE (pas un événement) dans Google Calendar
+      const taskData = {
+        summary: tache.titre,
+        description: `${tache.description}\n\nPriorité: ${tache.priorite || 'normale'}\nSource: ${tache.source || 'C.A.R.L.'}`
+      };
+
+      // Si une deadline est mentionnée, essayer de la parser
+      if (tache.deadline) {
+        const parsed = this.#parseDate(tache.deadline, false); // false = pas de correction d'heure pour les tâches
+        if (parsed) {
+          taskData.dueDate = parsed;
+        }
+      }
+
+      try {
+        const result = await calendarService.createTask(taskData);
+        await this.#telegramService.sendMessage(
+          `✅ <b>Tâche ajoutée à l'agenda !</b>\n\n` +
+          `📋 ${tache.titre}\n` +
+          `${result}`
+        );
+      } catch (error) {
+        await this.#telegramService.sendMessage(`❌ Erreur: ${error.message}`);
+      }
+    });
+
+    // Handler pour les clics sur les boutons d'événements
+    this.#telegramService.onCallback('event_', async (data, query) => {
+      const reportData = cronService.getLastReportData();
+      const tachesCount = reportData?.taches?.length || 0;
+      const eventIndex = parseInt(data.replace('event_', '')) - tachesCount;
+      const calendarService = cronService.getCalendarService();
+      
+      if (!reportData?.agenda?.evenements_proposes?.[eventIndex]) {
+        await this.#telegramService.sendMessage('❌ Événement introuvable. Regénérez le rapport avec /rapport');
+        return;
+      }
+      
+      if (!calendarService?.isConfigured) {
+        await this.#telegramService.sendMessage('❌ Google Calendar non configuré');
+        return;
+      }
+
+      const evt = reportData.agenda.evenements_proposes[eventIndex];
+      
+      // Estimer la durée selon le type d'activité
+      const durations = {
+        'volley': 120, 'foot': 120, 'sport': 120, 'tennis': 90,
+        'café': 60, 'coffee': 60,
+        'dîner': 120, 'dinner': 120, 'resto': 120,
+        'réunion': 60, 'meeting': 60
+      };
+      let duration = 90; // défaut
+      const activiteLower = evt.activite?.toLowerCase() || '';
+      for (const [key, dur] of Object.entries(durations)) {
+        if (activiteLower.includes(key)) {
+          duration = dur;
+          break;
+        }
+      }
+
+      const eventData = {
+        summary: `${evt.activite} avec ${evt.expediteur}`,
+        description: `Proposé via WhatsApp\nQuand: ${evt.quand}`,
+        duration: duration
+      };
+
+      // Parser la date/heure du "quand"
+      const parsed = this.#parseDate(evt.quand);
+      if (parsed) {
+        eventData.start = parsed;
+      }
+
+      try {
+        const result = await calendarService.createEvent(eventData);
+        await this.#telegramService.sendMessage(
+          `✅ <b>Événement ajouté à l'agenda !</b>\n\n` +
+          `📅 ${evt.activite} avec ${evt.expediteur}\n` +
+          `📍 ${evt.quand}\n` +
+          `${result}`
+        );
+      } catch (error) {
+        await this.#telegramService.sendMessage(`❌ Erreur: ${error.message}`);
+      }
+    });
+
     // Start polling for commands
     this.#telegramService.startPolling();
     this.#logger.info('Telegram commands registered');
+  }
+
+  /**
+   * Parse une date en français vers un objet Date
+   * @param {string} dateStr - La chaîne de date à parser
+   * @param {boolean} correctTimezone - Si true, corrige le décalage horaire (Docker UTC -> Europe/Zurich)
+   */
+  #parseDate(dateStr, correctTimezone = true) {
+    if (!dateStr) return null;
+    
+    const now = new Date();
+    const lower = dateStr.toLowerCase();
+    
+    // Jours de la semaine
+    const jours = ['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi'];
+    const joursShort = ['dim', 'lun', 'mar', 'mer', 'jeu', 'ven', 'sam'];
+    
+    let targetDate = new Date(now);
+    
+    // Chercher un jour de la semaine
+    for (let i = 0; i < jours.length; i++) {
+      if (lower.includes(jours[i]) || lower.includes(joursShort[i])) {
+        const currentDay = now.getDay();
+        let daysToAdd = i - currentDay;
+        if (daysToAdd <= 0) daysToAdd += 7; // Prochaine occurrence
+        targetDate.setDate(now.getDate() + daysToAdd);
+        break;
+      }
+    }
+    
+    // Chercher "demain"
+    if (lower.includes('demain')) {
+      targetDate.setDate(now.getDate() + 1);
+    }
+    
+    // Chercher "aujourd'hui"
+    if (lower.includes("aujourd'hui") || lower.includes('ce soir')) {
+      targetDate = new Date(now);
+    }
+
+    // Chercher une heure (ex: "20h", "20h30", "14:30")
+    const heureMatch = lower.match(/(\d{1,2})[h:](\d{2})?/);
+    if (heureMatch) {
+      let hours = parseInt(heureMatch[1]);
+      const minutes = parseInt(heureMatch[2] || '0');
+      
+      // Correction du décalage horaire: Docker est en UTC, on est en UTC+1
+      // L'utilisateur dit "20h" mais le serveur est en UTC, donc on doit mettre 19h UTC
+      if (correctTimezone) {
+        hours = hours - 1;
+        if (hours < 0) hours += 24;
+      }
+      
+      targetDate.setHours(hours, minutes, 0, 0);
+    } else {
+      // Défaut: 10h du matin (9h UTC)
+      targetDate.setHours(correctTimezone ? 9 : 10, 0, 0, 0);
+    }
+    
+    return targetDate;
   }
 
   #formatUptime(seconds) {

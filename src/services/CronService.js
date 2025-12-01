@@ -8,6 +8,9 @@ export class CronService {
   #config;
   #aiService;
   #calendarService;
+  
+  // Stockage des dernières données pour /tasks
+  #lastReportData = null;
 
   constructor(config, repository, telegramService, logger, aiService = null, calendarService = null) {
     this.#config = config;
@@ -17,6 +20,20 @@ export class CronService {
     this.#aiService = aiService;
     this.#calendarService = calendarService;
     this.init();
+  }
+
+  /**
+   * Retourne les tâches et événements du dernier rapport
+   */
+  getLastReportData() {
+    return this.#lastReportData;
+  }
+
+  /**
+   * Retourne le CalendarService pour créer des événements
+   */
+  getCalendarService() {
+    return this.#calendarService;
   }
 
   init() {
@@ -41,16 +58,16 @@ export class CronService {
 
   /**
    * Génère et envoie le rapport - appelable manuellement ou par cron
-   * @param {number} hoursAgo - Période à couvrir (défaut: 24h)
+   * Couvre les messages de la journée en cours (depuis minuit)
    */
-  async generateAndSendReport(hoursAgo = 24) {
-    this.#logger.info('Generating report...', { hoursAgo });
+  async generateAndSendReport() {
+    this.#logger.info('Generating report...');
 
-    // Récupérer les stats rapides (sans IA)
-    const stats = this.#repo.getQuickStats(hoursAgo);
+    // Récupérer les stats rapides (journée en cours)
+    const stats = this.#repo.getQuickStats();
     
-    // Récupérer tous les messages de la période
-    const messages = this.#repo.getMessagesForReport(hoursAgo);
+    // Récupérer tous les messages de la journée
+    const messages = this.#repo.getMessagesForReport();
 
     // Récupérer le résumé de l'agenda si disponible
     let agendaSummary = null;
@@ -65,11 +82,16 @@ export class CronService {
     let report;
     
     if (this.#aiService) {
-      // Générer le rapport avec IA (1 seule requête pour tous les messages)
-      report = await this.#aiService.generateFullReport(messages, stats, agendaSummary, this.#calendarService);
+      // Générer le rapport avec IA (retourne { formatted, raw })
+      const result = await this.#aiService.generateFullReport(messages, stats, agendaSummary, this.#calendarService);
+      report = result.formatted;
+      
+      // Stocker les données brutes pour /tasks
+      this.#lastReportData = result.raw;
     } else {
       // Fallback sans IA
       report = this.#formatBasicReport(stats, messages);
+      this.#lastReportData = null;
     }
 
     await this.#telegram.sendMessage(report);

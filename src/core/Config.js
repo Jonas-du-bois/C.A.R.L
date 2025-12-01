@@ -89,7 +89,7 @@ export class Config {
     return {
       enableDailyBriefing: process.env.ENABLE_DAILY_BRIEFING === 'true',
       dailyBriefingTime: process.env.DAILY_BRIEFING_TIME || '0 8 * * *',
-      enableAutoResponse: process.env.ENABLE_AUTO_RESPONSE !== 'false',
+      enableAutoResponse: process.env.ENABLE_AUTO_RESPONSE === 'true',
       enableCalendar: process.env.ENABLE_CALENDAR_INTEGRATION === 'true'
     };
   }

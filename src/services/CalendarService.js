@@ -13,13 +13,15 @@ export class CalendarService {
     } else if (this.#config.features.enableCalendar && this.#config.google.serviceAccountJson) {
       try {
         const credentials = JSON.parse(this.#config.google.serviceAccountJson);
+        
         const auth = new google.auth.GoogleAuth({
           credentials,
           scopes: ['https://www.googleapis.com/auth/calendar']
         });
-
         this.#calendar = google.calendar({ version: 'v3', auth });
         this.#isConfigured = true;
+        
+        console.log('Google Calendar initialized successfully');
       } catch (e) {
         console.error('Failed to initialize Google Calendar:', e);
       }
@@ -341,6 +343,74 @@ export class CalendarService {
     });
   }
 
+  /**
+   * Crée une tâche comme événement "toute la journée" dans Google Calendar
+   * Note: L'API Google Tasks ne permet pas aux comptes de service d'accéder
+   * aux tâches d'un utilisateur. On utilise donc Calendar avec un événement
+   * transparent (ne bloque pas l'agenda) qui sert de rappel.
+   * @param {Object} input - { summary, description, dueDate }
+   */
+  async createTask(input) {
+    if (!this.#calendar) {
+      return 'Google Calendar non configuré';
+    }
+
+    try {
+      const title = `📋 ${input.summary || 'Tâche'}`;
+      const description = input.description || '';
+      
+      // Préparer la date d'échéance
+      let dueDate;
+      if (input.dueDate) {
+        dueDate = new Date(input.dueDate);
+      } else {
+        // Par défaut: demain
+        dueDate = new Date();
+        dueDate.setDate(dueDate.getDate() + 1);
+      }
+      
+      // Format YYYY-MM-DD pour événement toute la journée
+      const dateStr = dueDate.toISOString().split('T')[0];
+      
+      // Calculer la date de fin (jour suivant pour que l'événement dure 1 jour)
+      const endDate = new Date(dueDate);
+      endDate.setDate(endDate.getDate() + 1);
+      const endDateStr = endDate.toISOString().split('T')[0];
+
+      const event = {
+        summary: title,
+        description: description,
+        start: { date: dateStr },      // Événement toute la journée
+        end: { date: endDateStr },     // Fin = jour suivant
+        transparency: 'transparent',    // Ne bloque pas l'agenda (libre)
+        colorId: '9',                   // Bleu (pour différencier des événements)
+        reminders: {
+          useDefault: false,
+          overrides: [
+            { method: 'popup', minutes: 540 }  // Rappel à 9h (540 min avant minuit)
+          ]
+        }
+      };
+
+      const res = await this.#calendar.events.insert({
+        calendarId: this.#config.google.calendarId,
+        resource: event,
+      });
+
+      // Formater la date pour l'affichage
+      const displayDate = dueDate.toLocaleDateString('fr-CH', {
+        weekday: 'long',
+        day: 'numeric',
+        month: 'long'
+      });
+
+      return `📋 Tâche ajoutée pour ${displayDate}\n${res.data.htmlLink}`;
+    } catch (error) {
+      console.error('Failed to create task:', error);
+      return `Échec: ${error.message}`;
+    }
+  }
+
   async createEvent(input) {
     if (!this.#calendar) {
       return 'Calendar integration disabled or not configured';
@@ -401,9 +471,9 @@ export class CalendarService {
         resource: event,
       });
 
-      return `Event created: ${res.data.htmlLink}`;
+      return `Événement créé: ${res.data.htmlLink}`;
     } catch (error) {
-      return `Failed to create event: ${error.message}`;
+      return `Échec de création: ${error.message}`;
     }
   }
 }

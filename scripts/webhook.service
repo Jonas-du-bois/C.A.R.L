@@ -1,0 +1,26 @@
+[Unit]
+Description=C.A.R.L GitHub Webhook Server
+After=network.target docker.service
+Wants=docker.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/mnt/storage/dev/carl/scripts
+Environment=NODE_ENV=production
+Environment=WEBHOOK_PORT=9000
+Environment=DEPLOY_DIR=/mnt/storage/dev/carl
+ExecStart=/usr/bin/node /mnt/storage/dev/carl/scripts/webhook-server.js
+Restart=always
+RestartSec=10
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=carl-webhook
+
+# Security
+NoNewPrivileges=false
+
+[Install]
+WantedBy=multi-user.target

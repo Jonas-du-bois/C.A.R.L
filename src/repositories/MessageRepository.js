@@ -400,11 +400,20 @@ export class MessageRepository {
   }
 
   /**
-   * Récupère tous les messages des dernières X heures pour le rapport
+   * Retourne le timestamp de minuit (début de la journée en cours)
+   */
+  #getMidnightTimestamp() {
+    const now = new Date();
+    const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+    return midnight.getTime();
+  }
+
+  /**
+   * Récupère tous les messages de la journée en cours pour le rapport
    * Optimisé pour envoyer une seule requête à l'IA
    */
-  getMessagesForReport(hoursAgo = 24) {
-    const since = Date.now() - (hoursAgo * 60 * 60 * 1000);
+  getMessagesForReport() {
+    const since = this.#getMidnightTimestamp();
     
     return this.#db.prepare(`
       SELECT 
@@ -430,10 +439,10 @@ export class MessageRepository {
   }
 
   /**
-   * Statistiques rapides sans IA
+   * Statistiques rapides sans IA (journée en cours)
    */
-  getQuickStats(hoursAgo = 24) {
-    const since = Date.now() - (hoursAgo * 60 * 60 * 1000);
+  getQuickStats() {
+    const since = this.#getMidnightTimestamp();
     
     const totals = this.#db.prepare(`
       SELECT 

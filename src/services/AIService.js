@@ -403,20 +403,47 @@ Tu t'adresses DIRECTEMENT à Jonas avec un ton professionnel mais chaleureux, l�
 MESSAGES À ANALYSER:
 ${messagesText}
 
-STATISTIQUES:
+STATISTIQUES (pour info, recalcule toi-même):
 - Total messages: ${stats.received}
 - Contacts uniques: ${stats.contacts}
-- Par catégorie: ${JSON.stringify(stats.byCategory || {})}
-- Par urgence: ${JSON.stringify(stats.byUrgency || {})}
 - Messages par expéditeur: ${JSON.stringify(senderStats)}
 
 AGENDA DE JONAS:
 ${agendaInfo}
 
+RÈGLES DE CATÉGORISATION (IMPORTANT - ignore les catégories pré-remplies):
+- "sport_loisirs": TOUTE invitation sportive (volley, foot, tennis, piscine, randonnée, etc.), sorties loisirs, hobbies
+- "personnel": Messages d'amis/famille sans rapport pro, discussions personnelles
+- "professionnel": Travail, factures, administration, banque, rappels de paiement
+- "benevolat": Associations, scouts, bénévolat
+- "spam": Publicités non sollicitées
+
+═══════════════════════════════════════════════════════════════════════
+SECTION AGENDA - RÈGLES CRITIQUES (OBLIGATOIRE DE REMPLIR SI APPLICABLE)
+═══════════════════════════════════════════════════════════════════════
+
+DÉFINITION: Un "événement agenda" est TOUTE mention de:
+- Une date (lundi, mardi, vendredi, 5 janvier, la semaine prochaine...)
+- Une heure (20h, 14h30, ce soir, demain matin...)
+- Un moment (ce weekend, après le travail, bientôt...)
+- Une activité proposée (volley, café, dîner, réunion, match...)
+
+EXEMPLES QUI DOIVENT APPARAÎTRE DANS agenda.evenements_proposes:
+✅ "Vendredi 20h, volley" → Événement: Volley, Quand: Vendredi 20h
+✅ "On se fait un café?" → Événement: Café, Quand: À planifier
+✅ "Tu viens samedi?" → Événement: Activité non précisée, Quand: Samedi
+✅ "Réunion lundi 9h" → Événement: Réunion, Quand: Lundi 9h
+✅ "Dispo ce weekend?" → Événement: À définir, Quand: Ce weekend
+
+SI UN MESSAGE CONTIENT UNE DATE/HEURE/MOMENT → IL DOIT ÊTRE DANS agenda.evenements_proposes
+NE JAMAIS METTRE "Aucune demande de rendez-vous détectée" SI UN MESSAGE MENTIONNE UN MOMENT!
+
+═══════════════════════════════════════════════════════════════════════
+
 GÉNÈRE UN JSON AVEC CETTE STRUCTURE EXACTE:
 {
-  "salutation": "Une salutation personnalisée style Jarvis (ex: 'Bonjour Jonas, voici votre briefing du jour.')",
-  "resume_situation": "Résumé de la situation en 2-3 phrases, style assistant personnel",
+  "salutation": "Une salutation personnalisée style Jarvis",
+  "resume_situation": "Résumé de la situation en 2-3 phrases",
   
   "statistiques": {
     "par_categorie": {
@@ -439,13 +466,11 @@ GÉNÈRE UN JSON AVEC CETTE STRUCTURE EXACTE:
     {
       "expediteur": "Nom",
       "message_original": "Le message complet",
-      "categorie": "professionnel/personnel/etc",
+      "categorie": "professionnel/personnel/sport_loisirs/benevolat/spam",
       "urgence": "critique/haute/moyenne/basse",
       "action_requise": "Action concrète à faire",
       "pourquoi": "Explication de l'importance",
-      "brouillon_reponse": "Réponse suggérée prête à envoyer",
-      "dates_proposees": ["dates mentionnées dans le message si applicable"],
-      "type_activite": "type d'activité proposée si applicable (café, dîner, réunion, etc.)"
+      "brouillon_reponse": "Réponse suggérée prête à envoyer"
     }
   ],
   
@@ -456,41 +481,50 @@ GÉNÈRE UN JSON AVEC CETTE STRUCTURE EXACTE:
     }
   ],
   
+  "taches": [
+    {
+      "titre": "Titre court de la tâche",
+      "description": "Description détaillée",
+      "priorite": "haute/moyenne/basse",
+      "deadline": "Date limite si applicable",
+      "source": "Nom de la personne ou contexte d'où vient cette tâche"
+    }
+  ],
+  
   "agenda": {
-    "rdv_proposes": [
+    "evenements_proposes": [
       {
         "expediteur": "Nom de la personne",
-        "activite": "Type d'activité proposée",
-        "dates_mentionnees": ["dates/moments mentionnés"],
-        "creneaux_suggeres": ["créneaux qui fonctionneraient selon l'agenda de Jonas"],
-        "suggestion_reponse": "Suggestion de réponse avec les créneaux disponibles"
+        "activite": "Type d'activité (volley, café, réunion, etc.)",
+        "quand": "Le moment proposé (ex: 'Vendredi 20h', 'Ce weekend', 'La semaine prochaine')",
+        "duree_estimee": "Durée estimée (ex: '2h pour sport', '1h pour café')",
+        "disponibilite_jonas": "LIBRE ou CONFLIT avec [événement]",
+        "creneaux_alternatifs": ["Si conflit, proposer des alternatives"],
+        "reponse_suggérée": "Réponse à copier/coller"
       }
     ],
-    "conflits_detectes": ["Si une date proposée entre en conflit avec l'agenda"],
-    "suggestion_generale": "Suggestion concernant l'agenda"
+    "conflits_detectes": ["Description des conflits si applicable"],
+    "resume_semaine": "Vue d'ensemble des événements proposés cette semaine"
   },
   
   "insights": [
     {
       "emoji": "✨/⚠️/📱/🎯/💡",
-      "titre": "Titre court de l'insight",
-      "detail": "Explication détaillée",
-      "recommandation": "Ce que Jonas devrait faire"
+      "titre": "Titre court",
+      "detail": "Explication",
+      "recommandation": "Action recommandée"
     }
   ],
   
-  "conclusion": "Une phrase de conclusion style Jarvis (ex: 'Souhaitez-vous que je prépare quelque chose, Jonas?')"
+  "conclusion": "Une phrase de conclusion style Jarvis"
 }
 
-RÈGLES IMPORTANTES:
-- Parle DIRECTEMENT à Jonas comme son assistant personnel
-- Sois concret, utile et légèrement spirituel comme Jarvis
-- Les brouillons de réponse doivent être naturels et prêts à copier/coller
-- Si quelqu'un propose une date ou une activité, VÉRIFIE les créneaux disponibles dans l'agenda et PROPOSE des créneaux libres
-- Si une date proposée entre en conflit avec l'agenda, INDIQUE le conflit
-- Pour les activités sans date précise, suggère des créneaux disponibles adaptés (café=1h, dîner=2h, sport=2h)
-- Identifie les patterns (quelqu'un qui écrit beaucoup, urgences, etc.)
-- Maximum 5 messages_actionnables et 4 insights`;
+RÈGLES FINALES IMPORTANTES:
+1. AGENDA: Si un message mentionne une date/heure/moment → OBLIGATOIREMENT dans agenda.evenements_proposes
+2. TÂCHES: Extraire les tâches à faire (paiements, rappels, choses à régler) dans la section taches
+3. Invitations sportives = catégorie "sport_loisirs" 
+4. Vérifie les conflits avec l'agenda de Jonas et propose des alternatives
+5. Maximum 5 messages_actionnables, 5 tâches et 4 insights`;
 
     try {
       let result;
@@ -506,10 +540,19 @@ RÈGLES IMPORTANTES:
           result = null;
       }
 
-      return this.#formatReport(result, stats, messages.length);
+      const formattedReport = this.#formatReport(result, stats, messages.length);
+      
+      // Retourner le rapport formaté ET les données brutes pour /tasks
+      return {
+        formatted: formattedReport,
+        raw: result
+      };
     } catch (error) {
       console.error('Failed to generate AI report:', error);
-      return this.#formatBasicReport(stats, messages);
+      return {
+        formatted: this.#formatBasicReport(stats, messages),
+        raw: null
+      };
     }
   }
 
@@ -565,6 +608,17 @@ RÈGLES IMPORTANTES:
     return JSON.parse(data.choices[0].message.content);
   }
 
+  /**
+   * Échappe les caractères HTML pour éviter les erreurs de parsing Telegram
+   */
+  #escapeHtml(text) {
+    if (!text) return '';
+    return String(text)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+  }
+
   #formatReport(aiResult, stats, totalMessages) {
     const now = new Date().toLocaleString('fr-CH', {
       weekday: 'long',
@@ -577,7 +631,7 @@ RÈGLES IMPORTANTES:
     let report = ``;
     
     // ═══════════════════════════════════════════════════════
-    // EN-TÊTE JARVIS
+    // EN-TÊTE CARL
     // ═══════════════════════════════════════════════════════
     report += `🤖 <b>C.A.R.L. - Rapport Personnel</b>\n`;
     report += `📅 ${now}\n`;
@@ -597,7 +651,7 @@ RÈGLES IMPORTANTES:
     // STATISTIQUES DE LA JOURNÉE
     // ═══════════════════════════════════════════════════════
     report += `┌─────────────────────────────────┐\n`;
-    report += `│ 📊 <b>STATISTIQUES</b>                    │\n`;
+    report += `│ 📊 <b>STATISTIQUES</b>         │\n`;
     report += `└─────────────────────────────────┘\n\n`;
 
     // Stats par catégorie
@@ -627,7 +681,7 @@ RÈGLES IMPORTANTES:
     if (aiResult?.messages_actionnables?.length > 0) {
       report += `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
       report += `┌─────────────────────────────────┐\n`;
-      report += `│ ⚡ <b>ACTIONS REQUISES</b>               │\n`;
+      report += `│ ⚡ <b>ACTIONS REQUISES</b>     │\n`;
       report += `└─────────────────────────────────┘\n\n`;
 
       aiResult.messages_actionnables.forEach((m, i) => {
@@ -645,15 +699,20 @@ RÈGLES IMPORTANTES:
           'sport_loisirs': '⚽'
         }[m.categorie] || '📝';
 
-        report += `${urgenceIcon} ${catIcon} <b>${m.expediteur}</b>\n`;
+        const msgOriginal = this.#escapeHtml(m.message_original?.substring(0, 120));
+        const actionReq = this.#escapeHtml(m.action_requise);
+        const pourquoi = this.#escapeHtml(m.pourquoi);
+        const brouillon = this.#escapeHtml(m.brouillon_reponse);
+        
+        report += `${urgenceIcon} ${catIcon} <b>${this.#escapeHtml(m.expediteur)}</b>\n`;
         report += `┌────────────────────────────\n`;
-        report += `│ 💬 <i>"${m.message_original?.substring(0, 120)}${m.message_original?.length > 120 ? '...' : ''}"</i>\n`;
+        report += `│ 💬 <i>"${msgOriginal}${m.message_original?.length > 120 ? '...' : ''}"</i>\n`;
         report += `│\n`;
-        report += `│ ➡️ <b>Action:</b> ${m.action_requise}\n`;
-        report += `│ ❓ <b>Pourquoi:</b> ${m.pourquoi}\n`;
+        report += `│ ➡️ <b>Action:</b> ${actionReq}\n`;
+        report += `│ ❓ <b>Pourquoi:</b> ${pourquoi}\n`;
         report += `│\n`;
         report += `│ ✏️ <b>Réponse suggérée:</b>\n`;
-        report += `│ <code>${m.brouillon_reponse}</code>\n`;
+        report += `│ <code>${brouillon}</code>\n`;
         report += `└────────────────────────────\n\n`;
       });
     }
@@ -663,60 +722,89 @@ RÈGLES IMPORTANTES:
     // ═══════════════════════════════════════════════════════
     if (aiResult?.messages_info?.length > 0) {
       report += `┌─────────────────────────────────┐\n`;
-      report += `│ 📋 <b>AUTRES MESSAGES</b>               │\n`;
+      report += `│ 📋 <b>AUTRES MESSAGES</b>      │\n`;
       report += `└─────────────────────────────────┘\n`;
       aiResult.messages_info.forEach(m => {
-        report += `• <b>${m.expediteur}:</b> ${m.resume}\n`;
+        report += `• <b>${this.#escapeHtml(m.expediteur)}:</b> ${this.#escapeHtml(m.resume)}\n`;
       });
       report += `\n`;
     }
 
     // ═══════════════════════════════════════════════════════
-    // AGENDA & RENDEZ-VOUS
+    // TÂCHES À FAIRE
     // ═══════════════════════════════════════════════════════
-    report += `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
-    report += `┌─────────────────────────────────┐\n`;
-    report += `│ 📅 <b>AGENDA & RENDEZ-VOUS</b>          │\n`;
-    report += `└─────────────────────────────────┘\n\n`;
-
-    if (aiResult?.agenda?.rdv_detectes?.length > 0) {
-      report += `🗓️ <b>RDV détectés:</b>\n`;
-      aiResult.agenda.rdv_detectes.forEach(rdv => {
-        report += `  • ${rdv}\n`;
-      });
-      report += `\n`;
-    } else {
-      report += `🗓️ Aucune demande de rendez-vous détectée\n\n`;
-    }
-
-    if (aiResult?.agenda?.suggestion) {
-      report += `💡 <i>${aiResult.agenda.suggestion}</i>\n\n`;
-    }
-
-    // ═══════════════════════════════════════════════════════
-    // PROPOSITIONS DE CRÉNEAUX
-    // ═══════════════════════════════════════════════════════
-    if (aiResult?.disponibilites_suggerees?.length > 0) {
+    if (aiResult?.taches?.length > 0) {
+      report += `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
       report += `┌─────────────────────────────────┐\n`;
-      report += `│ 🗓️ <b>CRÉNEAUX SUGGÉRÉS</b>             │\n`;
+      report += `│ ✅ <b>TÂCHES À FAIRE</b>       │\n`;
       report += `└─────────────────────────────────┘\n\n`;
 
-      aiResult.disponibilites_suggerees.forEach(prop => {
-        report += `📌 <b>${prop.expediteur}</b> - ${prop.contexte}\n`;
-        if (prop.creneaux_proposes?.length > 0) {
-          report += `   ✅ <b>Créneaux disponibles :</b>\n`;
-          prop.creneaux_proposes.forEach(creneau => {
-            report += `      • ${creneau}\n`;
-          });
-        } else {
-          report += `   ⚠️ <i>Aucun créneau disponible pour cette période</i>\n`;
+      aiResult.taches.forEach((t, i) => {
+        const prioIcon = {
+          'haute': '🔴',
+          'moyenne': '🟡',
+          'basse': '🟢'
+        }[t.priorite] || '⚪';
+        
+        report += `${prioIcon} <b>${this.#escapeHtml(t.titre)}</b>\n`;
+        report += `   ${this.#escapeHtml(t.description)}\n`;
+        if (t.deadline) {
+          report += `   ⏰ Deadline: ${this.#escapeHtml(t.deadline)}\n`;
         }
-        if (prop.reponse_suggeree) {
-          report += `   💬 <b>Réponse suggérée :</b>\n`;
-          report += `   <code>${prop.reponse_suggeree}</code>\n`;
+        if (t.source) {
+          report += `   📍 Source: ${this.#escapeHtml(t.source)}\n`;
         }
         report += `\n`;
       });
+    }
+
+    // ═══════════════════════════════════════════════════════
+    // AGENDA & ÉVÉNEMENTS PROPOSÉS
+    // ═══════════════════════════════════════════════════════
+    report += `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+    report += `┌─────────────────────────────────┐\n`;
+    report += `│ 📅 <b>AGENDA & RENDEZ-VOUS</b> │\n`;
+    report += `└─────────────────────────────────┘\n\n`;
+
+    const evenements = aiResult?.agenda?.evenements_proposes || [];
+    
+    if (evenements.length > 0) {
+      evenements.forEach(evt => {
+        const dispoIcon = evt.disponibilite_jonas?.includes('LIBRE') ? '✅' : '⚠️';
+        
+        report += `🗓️ <b>${this.#escapeHtml(evt.activite)}</b> avec ${this.#escapeHtml(evt.expediteur)}\n`;
+        report += `   📍 Quand: <b>${this.#escapeHtml(evt.quand)}</b>\n`;
+        if (evt.duree_estimee) {
+          report += `   ⏱️ Durée: ${this.#escapeHtml(evt.duree_estimee)}\n`;
+        }
+        report += `   ${dispoIcon} ${this.#escapeHtml(evt.disponibilite_jonas)}\n`;
+        
+        if (evt.creneaux_alternatifs?.length > 0 && !evt.disponibilite_jonas?.includes('LIBRE')) {
+          report += `   📋 Alternatives:\n`;
+          evt.creneaux_alternatifs.forEach(alt => {
+            report += `      • ${this.#escapeHtml(alt)}\n`;
+          });
+        }
+        
+        if (evt.reponse_suggérée) {
+          report += `   💬 <code>${this.#escapeHtml(evt.reponse_suggérée)}</code>\n`;
+        }
+        report += `\n`;
+      });
+
+      if (aiResult?.agenda?.resume_semaine) {
+        report += `📊 <i>${this.#escapeHtml(aiResult.agenda.resume_semaine)}</i>\n\n`;
+      }
+    } else {
+      report += `🗓️ <i>Aucun événement ou créneau proposé dans les messages</i>\n\n`;
+    }
+
+    if (aiResult?.agenda?.conflits_detectes?.length > 0) {
+      report += `⚠️ <b>Conflits détectés:</b>\n`;
+      aiResult.agenda.conflits_detectes.forEach(c => {
+        report += `   • ${this.#escapeHtml(c)}\n`;
+      });
+      report += `\n`;
     }
 
     // ═══════════════════════════════════════════════════════
@@ -724,15 +812,15 @@ RÈGLES IMPORTANTES:
     // ═══════════════════════════════════════════════════════
     if (aiResult?.insights?.length > 0) {
       report += `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
-      report += `┌─────────────────────────────────┐\n`;
-      report += `│ 💡 <b>INSIGHTS & RECOMMANDATIONS</b>   │\n`;
-      report += `└─────────────────────────────────┘\n\n`;
+      report += `┌───────────────────────────────────────┐\n`;
+      report += `│ 💡 <b>INSIGHTS & RECOMMANDATIONS</b> │\n`;
+      report += `└───────────────────────────────────────┘\n\n`;
 
       aiResult.insights.forEach(insight => {
-        report += `${insight.emoji || '💡'} <b>${insight.titre}</b>\n`;
-        report += `   ${insight.detail}\n`;
+        report += `${insight.emoji || '💡'} <b>${this.#escapeHtml(insight.titre)}</b>\n`;
+        report += `   ${this.#escapeHtml(insight.detail)}\n`;
         if (insight.recommandation) {
-          report += `   → <i>${insight.recommandation}</i>\n`;
+          report += `   → <i>${this.#escapeHtml(insight.recommandation)}</i>\n`;
         }
         report += `\n`;
       });
@@ -767,7 +855,7 @@ RÈGLES IMPORTANTES:
     report += `💬 <i>Bonjour Jonas. L'analyse IA est temporairement indisponible, mais j'ai préparé un résumé de vos messages.</i>\n\n`;
     
     report += `┌─────────────────────────────────┐\n`;
-    report += `│ 📊 <b>STATISTIQUES</b>                    │\n`;
+    report += `│ 📊 <b>STATISTIQUES</b>         │\n`;
     report += `└─────────────────────────────────┘\n\n`;
     report += `├ 📥 Messages reçus : ${stats.received}\n`;
     report += `├ 📤 Réponses       : ${stats.sent}\n`;
@@ -780,7 +868,7 @@ RÈGLES IMPORTANTES:
     if (messages.length > 0) {
       report += `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
       report += `┌─────────────────────────────────┐\n`;
-      report += `│ 💬 <b>MESSAGES À TRAITER</b>            │\n`;
+      report += `│ 💬 <b>MESSAGES À TRAITER</b>   │\n`;
       report += `└─────────────────────────────────┘\n\n`;
       
       messages.slice(-10).forEach(m => {
@@ -817,12 +905,12 @@ RÈGLES IMPORTANTES:
     report += `💬 <i>Bonjour Jonas. Journée particulièrement calme aujourd'hui.</i>\n\n`;
     
     report += `┌─────────────────────────────────┐\n`;
-    report += `│ 📊 <b>STATISTIQUES</b>                    │\n`;
+    report += `│ 📊 <b>STATISTIQUES</b>         │\n`;
     report += `└─────────────────────────────────┘\n\n`;
     report += `😴 Aucun message reçu dans les dernières 24h\n\n`;
     
     report += `┌─────────────────────────────────┐\n`;
-    report += `│ 💡 <b>INSIGHTS</b>                        │\n`;
+    report += `│ 💡 <b>INSIGHTS</b>             │\n`;
     report += `└─────────────────────────────────┘\n\n`;
     report += `✨ Profitez de cette accalmie pour vous concentrer\n`;
     report += `   sur vos projets personnels, Jonas.\n\n`;

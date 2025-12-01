@@ -15,6 +15,9 @@
     "test": "node --test tests/**/*.test.js",
     "test:unit": "node --test tests/unit/**/*.test.js",
     "test:integration": "node --test tests/integration/**/*.test.js",
+    "db:migrate": "node scripts/migrate-db.js",
+    "db:migrate:dry": "node scripts/migrate-db.js --dry-run",
+    "db:optimize": "node scripts/migrate-db.js --optimize",
     "docker:build": "docker build -t carl-bot:latest .",
     "docker:run": "docker-compose up"
   },

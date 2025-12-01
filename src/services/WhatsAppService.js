@@ -15,6 +15,7 @@ export class WhatsAppService extends EventEmitter {
   #sessionPath;
   #currentQr = null;  // Stocke le dernier QR code
   #qrRequested = false;  // QR demandé via /connect
+  #autoSendQr = false;  // Envoyer automatiquement le QR après réinitialisation
 
   constructor(config) {
     super();
@@ -39,7 +40,10 @@ export class WhatsAppService extends EventEmitter {
           '--no-first-run',
           '--no-zygote',
           '--single-process',
-          '--disable-gpu'
+          '--disable-gpu',
+          '--disable-extensions',
+          '--disable-background-networking',
+          '--disable-sync'
         ]
       }
     });
@@ -52,12 +56,14 @@ export class WhatsAppService extends EventEmitter {
       this.#qrCount++;
       this.#currentQr = qr;  // Toujours stocker le dernier QR
       
-      console.log(`[WhatsApp] QR Code #${this.#qrCount} prêt - utilisez /connect sur Telegram`);
-      
-      // N'envoyer sur Telegram que si explicitement demandé via /connect
-      if (this.#qrRequested) {
-        this.#qrRequested = false;  // Reset après envoi
+      // Envoyer automatiquement le premier QR après réinitialisation, ou si demandé via /connect
+      if (this.#autoSendQr || this.#qrRequested) {
+        console.log(`[WhatsApp] QR Code #${this.#qrCount} envoyé sur Telegram`);
+        this.#autoSendQr = false;  // Reset après envoi
+        this.#qrRequested = false;
         this.emit('qr', qr);
+      } else {
+        console.log(`[WhatsApp] QR Code #${this.#qrCount} prêt - utilisez /connect sur Telegram`);
       }
     });
 
@@ -145,6 +151,9 @@ export class WhatsAppService extends EventEmitter {
       // Supprimer le dossier de session
       const sessionDir = path.resolve(this.#sessionPath);
       if (fs.existsSync(sessionDir)) {
+        // Supprimer les fichiers de lock Chromium récursivement avant la suppression
+        this.#removeLockFiles(sessionDir);
+        
         fs.rmSync(sessionDir, { recursive: true, force: true });
         console.log(`[WhatsApp] Session directory removed: ${sessionDir}`);
       }
@@ -163,10 +172,12 @@ export class WhatsAppService extends EventEmitter {
 
   /**
    * Réinitialise le client après une session corrompue
+   * @param {boolean} autoSendQr - Envoyer automatiquement le premier QR sur Telegram
    */
-  async reinitialize() {
+  async reinitialize(autoSendQr = true) {
     console.log(`[WhatsApp] Reinitializing client...`);
     await this.clearSession();
+    this.#autoSendQr = autoSendQr;  // Envoyer automatiquement le prochain QR
     this.#initClient();
     return this.initialize();
   }
@@ -254,5 +265,31 @@ export class WhatsAppService extends EventEmitter {
     // Marquer qu'on veut le prochain QR
     this.#qrRequested = true;
     return { success: true, reason: 'waiting' };
+  }
+
+  /**
+   * Supprime récursivement les fichiers de lock Chromium dans un répertoire
+   */
+  #removeLockFiles(dir) {
+    const lockFiles = ['SingletonLock', 'SingletonSocket', 'SingletonCookie'];
+    
+    try {
+      const entries = fs.readdirSync(dir, { withFileTypes: true });
+      for (const entry of entries) {
+        const fullPath = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          this.#removeLockFiles(fullPath);
+        } else if (lockFiles.includes(entry.name)) {
+          try {
+            fs.unlinkSync(fullPath);
+            console.log(`[WhatsApp] Removed lock file: ${fullPath}`);
+          } catch (e) {
+            // Ignorer si on ne peut pas supprimer
+          }
+        }
+      }
+    } catch (e) {
+      // Ignorer les erreurs de lecture
+    }
   }
 }

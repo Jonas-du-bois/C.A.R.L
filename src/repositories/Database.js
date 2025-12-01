@@ -169,19 +169,60 @@ export class SQLiteDatabase {
     `);
 
     // ============================================
+    // TABLE: settings - Configuration persistante
+    // ============================================
+    this.#db.exec(`
+      CREATE TABLE IF NOT EXISTS settings (
+        key TEXT PRIMARY KEY,
+        value TEXT,
+        description TEXT,
+        updated_at INTEGER DEFAULT (strftime('%s', 'now') * 1000)
+      )
+    `);
+
+    // ============================================
     // INDEXES pour optimiser les requêtes
     // ============================================
     this.#db.exec(`
       CREATE INDEX IF NOT EXISTS idx_messages_contact_id ON messages(contact_id);
       CREATE INDEX IF NOT EXISTS idx_messages_received_at ON messages(received_at);
       CREATE INDEX IF NOT EXISTS idx_messages_direction ON messages(direction);
+      CREATE INDEX IF NOT EXISTS idx_messages_message_id ON messages(message_id);
       CREATE INDEX IF NOT EXISTS idx_message_analysis_urgency ON message_analysis(urgency);
       CREATE INDEX IF NOT EXISTS idx_message_analysis_category ON message_analysis(category);
+      CREATE INDEX IF NOT EXISTS idx_message_analysis_sentiment ON message_analysis(sentiment);
       CREATE INDEX IF NOT EXISTS idx_contacts_phone ON contacts(phone_number);
+      CREATE INDEX IF NOT EXISTS idx_contacts_last_seen ON contacts(last_seen_at);
       CREATE INDEX IF NOT EXISTS idx_conversations_contact_id ON conversations(contact_id);
+      CREATE INDEX IF NOT EXISTS idx_conversations_status ON conversations(status);
       CREATE INDEX IF NOT EXISTS idx_daily_stats_date ON daily_stats(date);
       CREATE INDEX IF NOT EXISTS idx_errors_occurred_at ON errors(occurred_at);
+      CREATE INDEX IF NOT EXISTS idx_errors_resolved ON errors(resolved);
+      CREATE INDEX IF NOT EXISTS idx_actions_status ON actions(status);
+      CREATE INDEX IF NOT EXISTS idx_responses_message_id ON responses(message_id);
     `);
+
+    // Nettoyage des anciennes tables de migration
+    this.#cleanupLegacyTables();
+  }
+
+  #cleanupLegacyTables() {
+    try {
+      // Supprimer les anciennes tables de migration si elles existent
+      const legacyTables = ['conversations_old'];
+      legacyTables.forEach(table => {
+        const exists = this.#db.prepare(
+          "SELECT name FROM sqlite_master WHERE type='table' AND name=?"
+        ).get(table);
+        
+        if (exists) {
+          this.#db.exec(`DROP TABLE IF EXISTS ${table}`);
+          console.log(`[Database] Cleaned up legacy table: ${table}`);
+        }
+      });
+    } catch (e) {
+      console.log('[Database] Legacy cleanup:', e.message);
+    }
   }
 
   #migrateOldSchema() {
@@ -218,6 +259,83 @@ export class SQLiteDatabase {
 
   transaction(fn) {
     return this.#db.transaction(fn);
+  }
+
+  // ============================================
+  // SETTINGS HELPERS
+  // ============================================
+
+  getSetting(key) {
+    const row = this.#db.prepare('SELECT value FROM settings WHERE key = ?').get(key);
+    return row ? row.value : null;
+  }
+
+  setSetting(key, value, description = null) {
+    return this.#db.prepare(`
+      INSERT INTO settings (key, value, description, updated_at) 
+      VALUES (?, ?, ?, ?)
+      ON CONFLICT(key) DO UPDATE SET value = ?, updated_at = ?
+    `).run(key, value, description, Date.now(), value, Date.now());
+  }
+
+  getAllSettings() {
+    return this.#db.prepare('SELECT * FROM settings').all();
+  }
+
+  // ============================================
+  // MAINTENANCE HELPERS
+  // ============================================
+
+  /**
+   * Optimise la base de données (VACUUM + ANALYZE)
+   */
+  optimize() {
+    console.log('[Database] Running optimization...');
+    this.#db.exec('VACUUM');
+    this.#db.exec('ANALYZE');
+    console.log('[Database] Optimization complete');
+  }
+
+  /**
+   * Retourne des statistiques sur la base
+   */
+  getStats() {
+    const tables = ['contacts', 'messages', 'message_analysis', 'responses', 'errors', 'actions', 'conversations', 'daily_stats'];
+    const stats = {};
+    
+    tables.forEach(table => {
+      try {
+        const count = this.#db.prepare(`SELECT COUNT(*) as count FROM ${table}`).get();
+        stats[table] = count.count;
+      } catch (e) {
+        stats[table] = 0;
+      }
+    });
+
+    // Taille approximative de la base
+    const pageCount = this.#db.pragma('page_count', { simple: true });
+    const pageSize = this.#db.pragma('page_size', { simple: true });
+    stats.size_bytes = pageCount * pageSize;
+    stats.size_mb = (stats.size_bytes / (1024 * 1024)).toFixed(2);
+
+    return stats;
+  }
+
+  /**
+   * Nettoie les anciennes données (plus de X jours)
+   */
+  cleanOldData(daysToKeep = 90) {
+    const cutoff = Date.now() - (daysToKeep * 24 * 60 * 60 * 1000);
+    
+    const deleteErrors = this.#db.prepare(`
+      DELETE FROM errors WHERE occurred_at < ? AND resolved = 1
+    `).run(cutoff);
+
+    console.log(`[Database] Cleaned ${deleteErrors.changes} old resolved errors`);
+    
+    return {
+      errors_deleted: deleteErrors.changes
+    };
   }
 
   close() {

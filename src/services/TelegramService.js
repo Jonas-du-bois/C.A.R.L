@@ -7,6 +7,7 @@ export class TelegramService {
   #pollingInterval = null;
   #lastUpdateId = 0;
   #commandHandlers = new Map();
+  #callbackHandlers = new Map();
 
   constructor(config) {
     this.#botToken = config.telegram.botToken;
@@ -40,6 +41,15 @@ export class TelegramService {
     this.#commandHandlers.set(command.toLowerCase(), handler);
   }
 
+  /**
+   * Register a callback handler for inline buttons
+   * @param {string} prefix - Callback data prefix (e.g., 'task_')
+   * @param {Function} handler - Async function(callbackData, callbackQuery)
+   */
+  onCallback(prefix, handler) {
+    this.#callbackHandlers.set(prefix, handler);
+  }
+
   async #pollUpdates() {
     try {
       const url = `https://api.telegram.org/bot${this.#botToken}/getUpdates?offset=${this.#lastUpdateId + 1}&timeout=1`;
@@ -58,6 +68,12 @@ export class TelegramService {
   }
 
   async #handleUpdate(update) {
+    // Handle callback queries (button clicks)
+    if (update.callback_query) {
+      await this.#handleCallback(update.callback_query);
+      return;
+    }
+
     const message = update.message;
     if (!message?.text) return;
 
@@ -66,7 +82,6 @@ export class TelegramService {
     // Vérification stricte: seul l'utilisateur autorisé peut utiliser le bot
     if (userId !== this.#allowedUserId) {
       console.log(`[SECURITY] Unauthorized access attempt from user ID: ${userId}`);
-      // Ne pas répondre aux utilisateurs non autorisés (silencieux)
       return;
     }
 
@@ -90,24 +105,80 @@ export class TelegramService {
         `/status - 🤖 État du système\n` +
         `/rapport - 📊 Rapport des dernières 24h\n` +
         `/stats - 📈 Statistiques rapides\n` +
+        `/tasks - ✅ Voir les tâches à planifier\n` +
         `/reset - 🔄 Réinitialiser la session WhatsApp`
       );
     }
   }
 
-  async sendMessage(message) {
+  async #handleCallback(callbackQuery) {
+    const userId = callbackQuery.from.id.toString();
+    
+    // Vérification de sécurité
+    if (userId !== this.#allowedUserId) {
+      console.log(`[SECURITY] Unauthorized callback from user ID: ${userId}`);
+      return;
+    }
+
+    const data = callbackQuery.data;
+    
+    // Trouver le handler correspondant
+    for (const [prefix, handler] of this.#callbackHandlers) {
+      if (data.startsWith(prefix)) {
+        try {
+          await handler(data, callbackQuery);
+          // Répondre au callback pour enlever le "loading"
+          await this.answerCallback(callbackQuery.id);
+        } catch (error) {
+          await this.answerCallback(callbackQuery.id, `❌ ${error.message}`);
+        }
+        return;
+      }
+    }
+  }
+
+  /**
+   * Answer a callback query
+   */
+  async answerCallback(callbackQueryId, text = null) {
+    try {
+      const url = `https://api.telegram.org/bot${this.#botToken}/answerCallbackQuery`;
+      await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          callback_query_id: callbackQueryId,
+          text: text,
+          show_alert: !!text
+        })
+      });
+    } catch (error) {
+      console.error('Failed to answer callback:', error);
+    }
+  }
+
+  async sendMessage(message, options = {}) {
     if (!this.#botToken || !this.#adminId) return;
 
     try {
       const url = `https://api.telegram.org/bot${this.#botToken}/sendMessage`;
+      const body = {
+        chat_id: this.#adminId,
+        text: message,
+        parse_mode: 'HTML'
+      };
+
+      // Ajouter les boutons inline si fournis
+      if (options.inlineKeyboard) {
+        body.reply_markup = {
+          inline_keyboard: options.inlineKeyboard
+        };
+      }
+
       const response = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          chat_id: this.#adminId,
-          text: message,
-          parse_mode: 'HTML'
-        })
+        body: JSON.stringify(body)
       });
 
       if (!response.ok) {
