@@ -439,6 +439,91 @@ export class MessageRepository {
   }
 
   /**
+   * Récupère les conversations groupées par contact pour le rapport IA
+   * Inclut les messages entrants ET sortants pour donner le contexte complet
+   * @param {number} maxMessagesPerContact - Limite de messages par contact (défaut: 20)
+   * @returns {Object} Conversations groupées par contact avec métadonnées
+   */
+  getConversationsForReport(maxMessagesPerContact = 20) {
+    const since = this.#getMidnightTimestamp();
+    
+    // Récupérer tous les messages (entrants ET sortants) de la journée
+    const allMessages = this.#db.prepare(`
+      SELECT 
+        m.id,
+        m.body,
+        m.direction,
+        m.received_at,
+        m.contact_id,
+        c.phone_number,
+        c.push_name,
+        c.display_name,
+        ma.intent,
+        ma.urgency,
+        ma.category,
+        ma.sentiment
+      FROM messages m
+      JOIN contacts c ON m.contact_id = c.id
+      LEFT JOIN message_analysis ma ON m.id = ma.message_id
+      WHERE m.received_at >= ?
+      ORDER BY c.phone_number, m.received_at ASC
+    `).all(since);
+
+    // Grouper par contact
+    const conversations = {};
+    
+    for (const msg of allMessages) {
+      const contactKey = msg.phone_number;
+      const contactName = msg.push_name || msg.display_name || msg.phone_number.split('@')[0];
+      
+      if (!conversations[contactKey]) {
+        conversations[contactKey] = {
+          contactName,
+          phoneNumber: msg.phone_number,
+          messages: [],
+          stats: {
+            incoming: 0,
+            outgoing: 0,
+            categories: {},
+            urgencies: {}
+          }
+        };
+      }
+      
+      const conv = conversations[contactKey];
+      
+      // Limiter le nombre de messages par contact
+      if (conv.messages.length < maxMessagesPerContact) {
+        conv.messages.push({
+          direction: msg.direction,
+          body: msg.body,
+          timestamp: msg.received_at,
+          category: msg.category,
+          urgency: msg.urgency,
+          sentiment: msg.sentiment
+        });
+      }
+      
+      // Mettre à jour les stats
+      if (msg.direction === 'incoming') {
+        conv.stats.incoming++;
+        if (msg.category) {
+          conv.stats.categories[msg.category] = (conv.stats.categories[msg.category] || 0) + 1;
+        }
+        if (msg.urgency) {
+          conv.stats.urgencies[msg.urgency] = (conv.stats.urgencies[msg.urgency] || 0) + 1;
+        }
+      } else {
+        conv.stats.outgoing++;
+      }
+    }
+
+    // Convertir en tableau et trier par nombre de messages (plus actifs en premier)
+    return Object.values(conversations)
+      .sort((a, b) => b.messages.length - a.messages.length);
+  }
+
+  /**
    * Statistiques rapides sans IA (journée en cours)
    */
   getQuickStats() {

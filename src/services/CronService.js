@@ -66,7 +66,10 @@ export class CronService {
     // Récupérer les stats rapides (journée en cours)
     const stats = this.#repo.getQuickStats();
     
-    // Récupérer tous les messages de la journée
+    // Récupérer les conversations groupées par contact (nouveau format)
+    const conversations = this.#repo.getConversationsForReport();
+    
+    // Garder aussi les messages plats pour compatibilité
     const messages = this.#repo.getMessagesForReport();
 
     // Récupérer le résumé de l'agenda si disponible
@@ -83,7 +86,7 @@ export class CronService {
     
     if (this.#aiService) {
       // Générer le rapport avec IA (retourne { formatted, raw })
-      const result = await this.#aiService.generateFullReport(messages, stats, agendaSummary, this.#calendarService);
+      const result = await this.#aiService.generateFullReport(conversations, stats, agendaSummary, this.#calendarService);
       report = result.formatted;
       
       // Stocker les données brutes pour /tasks
@@ -95,7 +98,7 @@ export class CronService {
     }
 
     await this.#telegram.sendMessage(report);
-    this.#logger.info('Report sent', { messagesCount: messages.length });
+    this.#logger.info('Report sent', { conversationsCount: conversations.length, messagesCount: messages.length });
     
     return report;
   }

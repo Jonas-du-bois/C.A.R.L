@@ -339,45 +339,77 @@ Return a JSON object with a single "summary" field containing a concise French s
   }
 
   /**
-   * Génère un rapport complet et actionnable à partir de tous les messages
+   * Formate les conversations de manière lisible pour l'IA
+   * Chaque conversation est présentée comme un fil de discussion
+   * @param {Array} conversations - Conversations groupées par contact
+   * @returns {string} Texte formaté pour le prompt IA
+   */
+  #formatConversationsForAI(conversations) {
+    // Limiter à 15 conversations max pour éviter de dépasser les tokens
+    const limitedConversations = conversations.slice(0, 15);
+    
+    return limitedConversations.map((conv, index) => {
+      const messagesFormatted = conv.messages.map(msg => {
+        const time = new Date(msg.timestamp).toLocaleString('fr-CH', {
+          hour: '2-digit',
+          minute: '2-digit'
+        });
+        
+        const direction = msg.direction === 'incoming' ? '→' : '←';
+        const sender = msg.direction === 'incoming' ? conv.contactName : 'Jonas (toi)';
+        
+        // Tronquer les messages trop longs
+        const body = msg.body?.length > 300 
+          ? msg.body.substring(0, 300) + '...' 
+          : msg.body;
+        
+        return `  ${direction} [${time}] ${sender}: "${body}"`;
+      }).join('\n');
+
+      // Calculer la catégorie dominante
+      const dominantCategory = Object.entries(conv.stats.categories)
+        .sort((a, b) => b[1] - a[1])[0]?.[0] || 'non classé';
+      
+      // Calculer l'urgence max
+      const urgencyOrder = { 'critical': 4, 'high': 3, 'medium': 2, 'low': 1 };
+      const maxUrgency = Object.keys(conv.stats.urgencies)
+        .sort((a, b) => (urgencyOrder[b] || 0) - (urgencyOrder[a] || 0))[0] || 'normal';
+
+      return `
+┌─────────────────────────────────────────────────────────────────────
+│ CONVERSATION #${index + 1}: ${conv.contactName}
+│ Messages: ${conv.stats.incoming} reçus, ${conv.stats.outgoing} réponses
+│ Catégorie détectée: ${dominantCategory} | Urgence max: ${maxUrgency}
+├─────────────────────────────────────────────────────────────────────
+${messagesFormatted}
+└─────────────────────────────────────────────────────────────────────`;
+    }).join('\n\n');
+  }
+
+  /**
+   * Génère un rapport complet et actionnable à partir des conversations
    * Style: Assistant personnel type Jarvis
-   * @param {Array} messages - Messages à analyser
+   * @param {Array} conversations - Conversations groupées par contact
    * @param {Object} stats - Statistiques
    * @param {Object} agendaSummary - Résumé de l'agenda Google (optionnel)
    * @param {Object} calendarService - Service calendrier pour vérifier les dispos (optionnel)
    */
-  async generateFullReport(messages, stats, agendaSummary = null, calendarService = null) {
-    if (!messages || messages.length === 0) {
+  async generateFullReport(conversations, stats, agendaSummary = null, calendarService = null) {
+    if (!conversations || conversations.length === 0) {
       return this.#formatEmptyReport(stats, agendaSummary);
     }
 
-    // Formater les messages avec TOUT le contenu pour l'IA
-    const recentMessages = messages.slice(-30);
-    const messagesText = recentMessages.map((m, i) => {
-      const date = new Date(m.received_at).toLocaleString('fr-CH', { 
-        day: '2-digit',
-        month: '2-digit',
-        hour: '2-digit', 
-        minute: '2-digit' 
-      });
-      const sender = m.push_name || m.display_name || m.phone_number.split('@')[0];
-      const category = m.category || 'non classé';
-      const urgency = m.urgency || 'normal';
-      return `[MSG ${i+1}]
-De: ${sender}
-Date: ${date}
-Catégorie: ${category}
-Urgence: ${urgency}
-Message: "${m.body}"
----`;
-    }).join('\n');
-
-    // Calculer les stats par expéditeur
-    const senderStats = {};
-    recentMessages.forEach(m => {
-      const sender = m.push_name || m.display_name || m.phone_number.split('@')[0];
-      senderStats[sender] = (senderStats[sender] || 0) + 1;
-    });
+    // Formater les conversations de manière claire pour l'IA
+    const conversationsText = this.#formatConversationsForAI(conversations);
+    
+    // Calculer les stats globales
+    const totalMessages = conversations.reduce((sum, c) => sum + c.messages.length, 0);
+    const totalContacts = conversations.length;
+    
+    // Stats par contact pour le contexte
+    const contactSummary = conversations.slice(0, 10).map(c => 
+      `• ${c.contactName}: ${c.stats.incoming} reçus, ${c.stats.outgoing} envoyés`
+    ).join('\n');
 
     // Préparer les infos agenda
     let agendaInfo = "Agenda Google non configuré.";
@@ -400,13 +432,19 @@ ${slotsStr}`;
     const prompt = `Tu es C.A.R.L., l'assistant personnel intelligent de Jonas - comme Jarvis pour Tony Stark.
 Tu t'adresses DIRECTEMENT à Jonas avec un ton professionnel mais chaleureux, légèrement spirituel.
 
-MESSAGES À ANALYSER:
-${messagesText}
+═══════════════════════════════════════════════════════════════════════
+CONVERSATIONS DE LA JOURNÉE (groupées par contact)
+═══════════════════════════════════════════════════════════════════════
 
-STATISTIQUES (pour info, recalcule toi-même):
-- Total messages: ${stats.received}
-- Contacts uniques: ${stats.contacts}
-- Messages par expéditeur: ${JSON.stringify(senderStats)}
+${conversationsText}
+
+═══════════════════════════════════════════════════════════════════════
+
+STATISTIQUES GLOBALES:
+- Total messages: ${totalMessages}
+- Contacts actifs: ${totalContacts}
+- Détail par contact:
+${contactSummary}
 
 AGENDA DE JONAS:
 ${agendaInfo}

@@ -243,6 +243,20 @@ export class Application {
       }
     });
 
+    // /heklp - Afficher l'aide
+    this.#telegramService.onCommand('help', async () => {
+      const helpMessage = 
+        '🤖 <b>Commandes C.A.R.L.</b>\n\n' +
+        '/rapport - Génère un rapport complet avec IA (journée en cours)\n' +
+        '/stats - Statistiques rapides sans IA (journée en cours)\n' +
+        '/status - État du système\n' +
+        '/connect - Obtenir le QR code WhatsApp\n' +
+        '/reset - Réinitialiser la session WhatsApp\n' +
+        '/tasks - Afficher les tâches et événements à planifier\n' +
+        '/help - Afficher cette aide';
+      await this.#telegramService.sendMessage(helpMessage);
+    });
+
     // /tasks - Afficher les tâches et événements à planifier avec boutons
     this.#telegramService.onCommand('tasks', async () => {
       const data = cronService.getLastReportData();
