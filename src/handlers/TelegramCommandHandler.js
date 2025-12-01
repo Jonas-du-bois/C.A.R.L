@@ -363,6 +363,31 @@ export class TelegramCommandHandler {
       const parsed = this.#parseDate(evt.quand);
       if (parsed) eventData.start = parsed;
 
+      // Vérifier les conflits sur tous les calendriers
+      if (eventData.start) {
+        const conflictCheck = await calendarService.checkConflicts(eventData.start, duration);
+        
+        if (conflictCheck.hasConflict) {
+          let conflictMsg = `⚠️ <b>Conflit détecté !</b>\n\n`;
+          conflictMsg += `L'horaire proposé (${eventData.start.toLocaleTimeString('fr-CH', { hour: '2-digit', minute: '2-digit' })}) entre en conflit avec:\n\n`;
+          
+          for (const c of conflictCheck.conflicts) {
+            const startStr = c.start.toLocaleTimeString('fr-CH', { hour: '2-digit', minute: '2-digit' });
+            const endStr = c.end.toLocaleTimeString('fr-CH', { hour: '2-digit', minute: '2-digit' });
+            conflictMsg += `📅 <b>${c.summary}</b>\n`;
+            conflictMsg += `   ${startStr} - ${endStr} (${c.calendarName})\n\n`;
+          }
+          
+          if (conflictCheck.suggestion) {
+            const suggestionStr = conflictCheck.suggestion.toLocaleTimeString('fr-CH', { hour: '2-digit', minute: '2-digit' });
+            conflictMsg += `\n💡 <b>Suggestion:</b> ${suggestionStr} serait disponible`;
+          }
+          
+          await this.#telegram.sendMessage(conflictMsg);
+          return;
+        }
+      }
+
       try {
         const result = await calendarService.createEvent(eventData);
         await this.#telegram.sendMessage(
@@ -444,6 +469,7 @@ export class TelegramCommandHandler {
     const now = new Date();
     const lower = dateStr.toLowerCase();
     let targetDate = new Date(now);
+    let isToday = true; // Par défaut, on considère que c'est aujourd'hui
 
     // Chercher un jour de la semaine
     for (let i = 0; i < JOURS_SEMAINE.length; i++) {
@@ -452,6 +478,7 @@ export class TelegramCommandHandler {
         let daysToAdd = i - currentDay;
         if (daysToAdd <= 0) daysToAdd += 7;
         targetDate.setDate(now.getDate() + daysToAdd);
+        isToday = false;
         break;
       }
     }
@@ -459,9 +486,19 @@ export class TelegramCommandHandler {
     // Mots-clés temporels
     if (lower.includes('demain')) {
       targetDate.setDate(now.getDate() + 1);
+      isToday = false;
     }
-    if (lower.includes("aujourd'hui") || lower.includes('ce soir')) {
+    if (lower.includes("aujourd'hui")) {
       targetDate = new Date(now);
+      isToday = true;
+    }
+
+    // "Ce soir" = aujourd'hui à 20h par défaut
+    const isCeSoir = lower.includes('ce soir') || lower.includes('soir');
+    const isMatin = lower.includes('matin');
+    if (isCeSoir) {
+      targetDate = new Date(now);
+      isToday = true;
     }
 
     // Parser l'heure (ex: "20h", "20h30", "14:30")
@@ -477,8 +514,19 @@ export class TelegramCommandHandler {
       }
 
       targetDate.setHours(hours, minutes, 0, 0);
+    } else if (isCeSoir) {
+      // "Ce soir" sans heure précise = 20h par défaut
+      targetDate.setHours(correctTimezone ? 19 : 20, 0, 0, 0);
+    } else if (isMatin) {
+      // "Matin" sans heure précise = 10h par défaut
+      targetDate.setHours(correctTimezone ? 9 : 10, 0, 0, 0);
+    } else if (isToday) {
+      // Pour aujourd'hui sans heure précise: heure actuelle + 45 minutes
+      const nextHour = new Date(now);
+      nextHour.setHours(nextHour.getHours() + 0, 45, 0, 0);
+      targetDate = nextHour;
     } else {
-      // Défaut: 10h du matin
+      // Pour les autres jours sans heure: 10h du matin par défaut
       targetDate.setHours(correctTimezone ? 9 : 10, 0, 0, 0);
     }
 

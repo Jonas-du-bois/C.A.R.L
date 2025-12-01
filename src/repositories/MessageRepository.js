@@ -155,13 +155,31 @@ export class MessageRepository {
    * @returns {Array} Messages avec infos complètes
    */
   getRecentMessagesDebug(limit = 10) {
-    return this.#db.prepare(`
+    const rows = this.#db.prepare(`
       SELECT m.*, c.phone_number, c.push_name, c.display_name
       FROM messages m
       JOIN contacts c ON m.contact_id = c.id
       ORDER BY m.received_at DESC
       LIMIT ?
     `).all(limit);
+
+    // Filtrer les doublons par message_id (au cas où la BD contient des entrées dupliquées)
+    const seen = new Set();
+    const deduped = [];
+    for (const r of rows) {
+      if (!r.message_id) {
+        // Si pas de message_id, utiliser l'id interne
+        if (seen.has(r.id)) continue;
+        seen.add(r.id);
+        deduped.push(r);
+        continue;
+      }
+      if (seen.has(r.message_id)) continue;
+      seen.add(r.message_id);
+      deduped.push(r);
+    }
+
+    return deduped;
   }
 
   /**

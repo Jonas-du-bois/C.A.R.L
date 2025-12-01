@@ -8,6 +8,7 @@ export class TelegramService {
   #lastUpdateId = 0;
   #commandHandlers = new Map();
   #callbackHandlers = new Map();
+  #recentCommands = new Map(); // key: userId|text -> timestamp
 
   constructor(config) {
     this.#botToken = config.telegram.botToken;
@@ -110,6 +111,17 @@ export class TelegramService {
 
     const [command, ...args] = text.slice(1).split(' ');
     const handler = this.#commandHandlers.get(command.toLowerCase());
+
+    // Protection anti-doublon: ignorer la même commande du même utilisateur
+    // si elle est reçue deux fois en très peu de temps (race du polling)
+    const commandKey = `${userId}|${text}`;
+    const lastTs = this.#recentCommands.get(commandKey) || 0;
+    const now = Date.now();
+    if (now - lastTs < 1500) {
+      console.log(`[TelegramService] Ignoring duplicate command from ${userId}: ${text}`);
+      return;
+    }
+    this.#recentCommands.set(commandKey, now);
 
     if (handler) {
       try {

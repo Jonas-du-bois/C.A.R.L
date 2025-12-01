@@ -121,6 +121,113 @@ export class CalendarService {
   }
 
   /**
+   * Vérifie s'il y a des conflits avec des événements existants
+   * @param {Date} startTime - Heure de début de l'événement proposé
+   * @param {number} durationMinutes - Durée en minutes (défaut: 60)
+   * @returns {{ hasConflict: boolean, conflicts: Array, suggestion: Date|null }}
+   */
+  async checkConflicts(startTime, durationMinutes = 60) {
+    if (!this.#calendar) {
+      return { hasConflict: false, conflicts: [], suggestion: null };
+    }
+
+    try {
+      const endTime = new Date(startTime.getTime() + durationMinutes * 60 * 1000);
+      
+      // Récupérer les événements du jour concerné
+      const dayStart = new Date(startTime);
+      dayStart.setHours(0, 0, 0, 0);
+      const dayEnd = new Date(startTime);
+      dayEnd.setHours(23, 59, 59, 999);
+
+      // Récupérer tous les calendriers
+      const calendars = await this.getCalendarList();
+      
+      if (calendars.length === 0) {
+        return { hasConflict: false, conflicts: [], suggestion: null };
+      }
+
+      // Récupérer les événements de chaque calendrier pour ce jour
+      const allEventsPromises = calendars.map(async (cal) => {
+        try {
+          const res = await this.#calendar.events.list({
+            calendarId: cal.id,
+            timeMin: dayStart.toISOString(),
+            timeMax: dayEnd.toISOString(),
+            singleEvents: true,
+            orderBy: 'startTime',
+          });
+          return (res.data.items || []).map(event => ({
+            ...event,
+            calendarName: cal.name
+          }));
+        } catch (error) {
+          return [];
+        }
+      });
+
+      const allEventsArrays = await Promise.all(allEventsPromises);
+      const dayEvents = allEventsArrays.flat().sort((a, b) => {
+        const aStart = new Date(a.start?.dateTime || a.start?.date);
+        const bStart = new Date(b.start?.dateTime || b.start?.date);
+        return aStart - bStart;
+      });
+
+      // Chercher les conflits
+      const conflicts = [];
+      for (const event of dayEvents) {
+        const eventStart = new Date(event.start?.dateTime || event.start?.date);
+        const eventEnd = new Date(event.end?.dateTime || event.end?.date);
+
+        // Vérifier si l'événement proposé chevauche cet événement
+        if (startTime < eventEnd && endTime > eventStart) {
+          conflicts.push({
+            summary: event.summary,
+            start: eventStart,
+            end: eventEnd,
+            calendarName: event.calendarName
+          });
+        }
+      }
+
+      // Si conflit, suggérer un créneau alternatif
+      let suggestion = null;
+      if (conflicts.length > 0) {
+        // Trouver le prochain créneau libre après les conflits
+        const lastConflictEnd = new Date(Math.max(...conflicts.map(c => c.end.getTime())));
+        
+        // Vérifier si ce créneau est libre
+        let proposedStart = new Date(lastConflictEnd);
+        proposedStart.setMinutes(0, 0, 0); // Arrondir à l'heure
+        if (proposedStart < lastConflictEnd) {
+          proposedStart.setHours(proposedStart.getHours() + 1);
+        }
+
+        // Vérifier que le créneau suggéré ne conflicte pas avec un autre événement
+        const proposedEnd = new Date(proposedStart.getTime() + durationMinutes * 60 * 1000);
+        let isFree = true;
+        for (const event of dayEvents) {
+          const eventStart = new Date(event.start?.dateTime || event.start?.date);
+          const eventEnd = new Date(event.end?.dateTime || event.end?.date);
+          if (proposedStart < eventEnd && proposedEnd > eventStart) {
+            isFree = false;
+            break;
+          }
+        }
+
+        if (isFree && proposedStart.getHours() < 22) {
+          suggestion = proposedStart;
+        }
+      }
+
+      return { hasConflict: conflicts.length > 0, conflicts, suggestion };
+    } catch (error) {
+      console.error('Failed to check conflicts:', error.message);
+      return { hasConflict: false, conflicts: [], suggestion: null };
+    }
+  }
+
+  /**
    * Trouve les créneaux disponibles dans les prochains jours
    * @param {number} daysAhead - Nombre de jours à regarder
    * @param {number} minDurationMinutes - Durée minimum du créneau en minutes

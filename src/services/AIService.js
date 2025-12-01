@@ -775,7 +775,9 @@ RÈGLES FINALES IMPORTANTES:
           result = null;
       }
 
-      const formattedReport = this.#formatReport(result, stats, messages.length);
+      // Utiliser le total de messages calculé plus haut (totalMessages)
+      // `messages` n'existe pas dans cette portée et provoquait une ReferenceError
+      const formattedReport = this.#formatReport(result, stats, totalMessages);
       
       // Retourner le rapport formaté ET les données brutes pour /tasks
       return {
@@ -870,7 +872,7 @@ RÈGLES FINALES IMPORTANTES:
     // ═══════════════════════════════════════════════════════
     report += `🤖 <b>C.A.R.L. - Rapport Personnel</b>\n`;
     report += `📅 ${now}\n`;
-    report += `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
+    report += `━━━━━━━━\n\n`;
 
     // Salutation Jarvis
     if (aiResult?.salutation) {

@@ -21,6 +21,28 @@ import { Message } from '../domain/Message.js';
  * 
  * @class
  */
+
+// Mots-clés pour détecter les messages organisationnels dans les groupes
+const ORGANIZATIONAL_KEYWORDS = [
+  // Événements et rendez-vous
+  'rdv', 'rendez-vous', 'rendezvous', 'meeting', 'réunion', 'reunion',
+  // Temps
+  'demain', 'ce soir', 'samedi', 'dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi',
+  'semaine prochaine', 'weekend', 'week-end',
+  // Heures
+  /\d{1,2}[h:]\d{0,2}/i, /à \d{1,2}h/i,
+  // Lieux et activités
+  'on se retrouve', 'on se voit', 'chez', 'resto', 'restaurant', 'bar', 'café', 'cinema', 'cinéma',
+  'soirée', 'fête', 'anniversaire', 'mariage', 'apéro', 'bbq', 'barbecue',
+  // Propositions
+  'ça vous dit', 'ca vous dit', 'qui est dispo', 'qui vient', 'on fait quoi',
+  'vous êtes libres', 'vous etes libres', 'dispo ?', 'disponible',
+  // Confirmations
+  'je viens', 'je serai là', 'je serai la', 'compte sur moi', 'présent', 'ok pour',
+  // Sport et activités
+  'match', 'entrainement', 'entraînement', 'course', 'rando', 'randonnée', 'ski', 'sortie'
+];
+
 export class Application {
   #config;
   #logger;
@@ -28,6 +50,7 @@ export class Application {
   #whatsapp;
   #queue;
   #telegramService;
+  #groupMessageTimestamps = new Map(); // Rate limiting pour les groupes
 
   constructor() {
     this.#config = new Config();
@@ -192,7 +215,12 @@ export class Application {
         if (msg.fromMe || msg.isStatus) return;
 
         const chat = await this.#getChatSafe(msg);
-        if (chat?.isGroup) return;
+        
+        // Gestion des messages de groupe
+        if (chat?.isGroup) {
+          await this.#handleGroupMessage(msg, chat, messageRepo);
+          return;
+        }
 
         // Éviter les doublons - vérifier si le message existe déjà
         const existingMessage = messageRepo.getMessageById(msg.id.id);
@@ -289,6 +317,109 @@ export class Application {
       return await msg.getChat();
     } catch {
       return null;
+    }
+  }
+
+  /**
+   * Vérifie si un message contient du contenu organisationnel
+   * @param {string} text - Texte du message
+   * @returns {boolean}
+   */
+  #isOrganizationalMessage(text) {
+    if (!text || text.length < 5) return false;
+    
+    const lowerText = text.toLowerCase();
+    
+    for (const keyword of ORGANIZATIONAL_KEYWORDS) {
+      if (keyword instanceof RegExp) {
+        if (keyword.test(text)) return true;
+      } else if (lowerText.includes(keyword)) {
+        return true;
+      }
+    }
+    
+    return false;
+  }
+
+  /**
+   * Rate limiting pour les groupes (max 1 message par groupe toutes les 30 secondes)
+   * @param {string} groupId - ID du groupe
+   * @returns {boolean} - true si le message peut être traité
+   */
+  #canProcessGroupMessage(groupId) {
+    const now = Date.now();
+    const lastProcessed = this.#groupMessageTimestamps.get(groupId) || 0;
+    
+    // Limite: 1 message organisationnel par groupe toutes les 30 secondes
+    if (now - lastProcessed < 30000) {
+      return false;
+    }
+    
+    this.#groupMessageTimestamps.set(groupId, now);
+    return true;
+  }
+
+  /**
+   * Gère les messages de groupe (détection de contenu organisationnel uniquement)
+   * @param {Object} msg - Message WhatsApp
+   * @param {Object} chat - Chat WhatsApp
+   * @param {MessageRepository} messageRepo - Repository des messages
+   */
+  async #handleGroupMessage(msg, chat, messageRepo) {
+    // Ignorer les messages trop courts ou sans texte
+    if (!msg.body || msg.body.length < 10) return;
+
+    // Vérifier si c'est un message organisationnel (détection LOCALE, sans API)
+    if (!this.#isOrganizationalMessage(msg.body)) {
+      return; // Pas organisationnel, on ignore
+    }
+
+    // Rate limiting pour éviter trop de stockage
+    if (!this.#canProcessGroupMessage(chat.id._serialized)) {
+      this.#logger.debug('Group message rate limited', { 
+        group: chat.name,
+        message: msg.body.substring(0, 50)
+      });
+      return;
+    }
+
+    // Sauvegarder le message organisationnel du groupe
+    try {
+      // Récupérer l'auteur du message dans le groupe
+      const contact = await msg.getContact();
+      const authorName = contact?.pushname || contact?.name || 'Inconnu';
+
+      const groupContact = messageRepo.findOrCreateContact(chat.id._serialized, {
+        pushName: chat.name,
+        displayName: chat.name,
+        isGroup: true
+      });
+
+      messageRepo.saveIncomingMessage(
+        new Message({
+          id: msg.id.id,
+          from: chat.id._serialized,
+          body: `[${authorName}] ${msg.body}`,
+          timestamp: msg.timestamp * 1000
+        }),
+        groupContact.id,
+        {
+          mediaType: null,
+          isForwarded: msg.isForwarded || false,
+          isBroadcast: false,
+          quotedMessageId: null
+        }
+      );
+
+      this.#logger.info('📅 Organizational message detected in group', {
+        group: chat.name,
+        author: authorName,
+        preview: msg.body.substring(0, 80)
+      });
+    } catch (error) {
+      if (!error.message?.includes('UNIQUE constraint')) {
+        this.#logger.error('Error saving group message', { error: error.message });
+      }
     }
   }
 
