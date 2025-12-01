@@ -580,15 +580,22 @@ Génère un JSON avec:
     // Préparer les infos agenda
     let agendaInfo = "Agenda Google non configuré.";
     if (agendaSummary?.configured) {
+      // Afficher les calendriers consultés
+      const calendarsStr = agendaSummary.calendarsCount > 0
+        ? `📅 ${agendaSummary.calendarsCount} calendrier(s) consultés: ${agendaSummary.calendars?.join(', ')}`
+        : '';
+      
       const eventsStr = agendaSummary.events?.length > 0
-        ? agendaSummary.events.map(e => `- ${e.day}: ${e.title} à ${e.start}`).join('\n')
+        ? agendaSummary.events.map(e => `- ${e.day}: ${e.title} à ${e.start}${e.calendar ? ` [${e.calendar}]` : ''}`).join('\n')
         : "Aucun événement à venir.";
       
       const slotsStr = agendaSummary.slots?.length > 0
         ? agendaSummary.slots.map(s => `- ${s.day}: ${s.start} - ${s.end} (${s.duration})`).join('\n')
         : "Pas de créneau disponible trouvé.";
       
-      agendaInfo = `ÉVÉNEMENTS À VENIR (3 prochains jours):
+      agendaInfo = `${calendarsStr}
+
+ÉVÉNEMENTS À VENIR (3 prochains jours):
 ${eventsStr}
 
 CRÉNEAUX DISPONIBLES (min 1h30):

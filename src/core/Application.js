@@ -194,6 +194,12 @@ export class Application {
         const chat = await this.#getChatSafe(msg);
         if (chat?.isGroup) return;
 
+        // Éviter les doublons - vérifier si le message existe déjà
+        const existingMessage = messageRepo.getMessageById(msg.id.id);
+        if (existingMessage) {
+          return; // Message déjà sauvegardé, ignorer silencieusement
+        }
+
         const message = this.#createMessage(msg);
         const metadata = this.#extractMessageMetadata(msg, chat);
 
@@ -206,6 +212,10 @@ export class Application {
           });
         }
       } catch (error) {
+        // Ignorer les erreurs de contrainte UNIQUE (doublon)
+        if (error.message?.includes('UNIQUE constraint')) {
+          return;
+        }
         this.#logger.error('Error processing incoming message', { 
           error: error.message,
           from: msg?.from 
@@ -215,21 +225,26 @@ export class Application {
   }
 
   /**
-   * Configure le handler pour les messages sortants (envoyés par Jonas)
+   * Configure le handler pour les messages sortants (envoyés par Jonas manuellement)
+   * NOTE: message_create est déclenché pour TOUS les messages, donc on filtre strictement
    */
   #setupOutgoingMessageHandler(messageRepo) {
     this.#whatsapp.on('message_create', async (msg) => {
       try {
-        // Capturer uniquement les messages envoyés par Jonas
-        if (!msg.fromMe || msg.isStatus) return;
+        // IMPORTANT: Ne capturer QUE les messages envoyés par Jonas (fromMe = true)
+        // message_create est déclenché pour tous les messages, y compris les entrants!
+        if (!msg.fromMe) return;
+        
+        // Ignorer les statuts WhatsApp
+        if (msg.isStatus) return;
 
         const chat = await this.#getChatSafe(msg);
         if (chat?.isGroup) return;
 
-        // Éviter les doublons avec les réponses auto du bot
-        if (messageRepo.getMessageById(msg.id.id)) {
-          this.#logger.debug('Skipping already saved message', { id: msg.id.id });
-          return;
+        // Éviter les doublons - vérifier si le message existe déjà
+        const existingMessage = messageRepo.getMessageById(msg.id.id);
+        if (existingMessage) {
+          return; // Message déjà sauvegardé, ignorer silencieusement
         }
 
         const contact = messageRepo.findOrCreateContact(msg.to, {
@@ -250,6 +265,10 @@ export class Application {
           bodyPreview: msg.body?.substring(0, 50)
         });
       } catch (error) {
+        // Ignorer les erreurs de contrainte UNIQUE (doublon)
+        if (error.message?.includes('UNIQUE constraint')) {
+          return;
+        }
         this.#logger.error('Error saving outgoing message', {
           error: error.message,
           to: msg?.to

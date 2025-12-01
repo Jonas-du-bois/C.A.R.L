@@ -33,9 +33,30 @@ export class CalendarService {
   }
 
   /**
-   * Récupère les événements des prochains jours
+   * Récupère la liste de tous les calendriers accessibles
+   * @returns {Array} Liste des calendriers avec id et summary
+   */
+  async getCalendarList() {
+    if (!this.#calendar) return [];
+
+    try {
+      const res = await this.#calendar.calendarList.list();
+      return (res.data.items || []).map(cal => ({
+        id: cal.id,
+        name: cal.summary,
+        primary: cal.primary || false,
+        accessRole: cal.accessRole
+      }));
+    } catch (error) {
+      console.error('Failed to fetch calendar list:', error.message);
+      return [];
+    }
+  }
+
+  /**
+   * Récupère les événements des prochains jours de TOUS les calendriers
    * @param {number} daysAhead - Nombre de jours à regarder (défaut: 7)
-   * @returns {Array} Liste des événements
+   * @returns {Array} Liste des événements de tous les calendriers
    */
   async getUpcomingEvents(daysAhead = 7) {
     if (!this.#calendar) return [];
@@ -45,15 +66,54 @@ export class CalendarService {
       const future = new Date();
       future.setDate(future.getDate() + daysAhead);
 
-      const res = await this.#calendar.events.list({
-        calendarId: this.#config.google.calendarId,
-        timeMin: now.toISOString(),
-        timeMax: future.toISOString(),
-        singleEvents: true,
-        orderBy: 'startTime',
+      // Récupérer la liste de tous les calendriers
+      const calendars = await this.getCalendarList();
+      
+      if (calendars.length === 0) {
+        // Fallback: utiliser le calendrier configuré
+        const res = await this.#calendar.events.list({
+          calendarId: this.#config.google.calendarId,
+          timeMin: now.toISOString(),
+          timeMax: future.toISOString(),
+          singleEvents: true,
+          orderBy: 'startTime',
+        });
+        return res.data.items || [];
+      }
+
+      // Récupérer les événements de chaque calendrier en parallèle
+      const allEventsPromises = calendars.map(async (cal) => {
+        try {
+          const res = await this.#calendar.events.list({
+            calendarId: cal.id,
+            timeMin: now.toISOString(),
+            timeMax: future.toISOString(),
+            singleEvents: true,
+            orderBy: 'startTime',
+          });
+          // Ajouter le nom du calendrier à chaque événement
+          return (res.data.items || []).map(event => ({
+            ...event,
+            calendarName: cal.name,
+            calendarId: cal.id
+          }));
+        } catch (error) {
+          console.error(`Failed to fetch events from calendar ${cal.name}:`, error.message);
+          return [];
+        }
       });
 
-      return res.data.items || [];
+      const allEventsArrays = await Promise.all(allEventsPromises);
+      const allEvents = allEventsArrays.flat();
+
+      // Trier par date de début
+      allEvents.sort((a, b) => {
+        const aStart = new Date(a.start?.dateTime || a.start?.date);
+        const bStart = new Date(b.start?.dateTime || b.start?.date);
+        return aStart - bStart;
+      });
+
+      return allEvents;
     } catch (error) {
       console.error('Failed to fetch calendar events:', error.message);
       return [];
@@ -201,21 +261,26 @@ export class CalendarService {
 
   /**
    * Génère un résumé de l'agenda pour le rapport
+   * Inclut les événements de TOUS les calendriers
    * @returns {Object} Résumé de l'agenda
    */
   async getAgendaSummary() {
     if (!this.#calendar) {
-      return { configured: false, events: [], slots: [] };
+      return { configured: false, events: [], slots: [], calendars: [] };
     }
 
     try {
+      const calendars = await this.getCalendarList();
       const events = await this.getUpcomingEvents(3);
       const slots = await this.findAvailableSlots(3, 90);
 
       return {
         configured: true,
-        events: events.slice(0, 5).map(e => ({
+        calendarsCount: calendars.length,
+        calendars: calendars.map(c => c.name),
+        events: events.slice(0, 10).map(e => ({
           title: e.summary,
+          calendar: e.calendarName || 'Principal',
           start: this.#formatDateTime(new Date(e.start.dateTime || e.start.date)),
           day: this.#formatDay(new Date(e.start.dateTime || e.start.date))
         })),

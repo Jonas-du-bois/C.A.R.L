@@ -21,6 +21,12 @@ export class TelegramService {
   startPolling() {
     if (!this.#botToken || !this.#adminId) return;
     
+    // Éviter de démarrer le polling plusieurs fois
+    if (this.#pollingInterval) {
+      console.log('Telegram polling already running');
+      return;
+    }
+    
     this.#pollingInterval = setInterval(() => this.#pollUpdates(), 3000);
     console.log('Telegram bot polling started');
   }
@@ -50,20 +56,34 @@ export class TelegramService {
     this.#callbackHandlers.set(prefix, handler);
   }
 
+  #isPolling = false;  // Flag pour éviter les appels concurrents
+
   async #pollUpdates() {
+    // Éviter les appels concurrents au polling
+    if (this.#isPolling) return;
+    this.#isPolling = true;
+
     try {
       const url = `https://api.telegram.org/bot${this.#botToken}/getUpdates?offset=${this.#lastUpdateId + 1}&timeout=1`;
       const response = await fetch(url);
       const data = await response.json();
 
-      if (!data.ok || !data.result?.length) return;
+      if (!data.ok || !data.result?.length) {
+        this.#isPolling = false;
+        return;
+      }
+
+      // Mettre à jour lastUpdateId AVANT de traiter pour éviter les doublons
+      const maxUpdateId = Math.max(...data.result.map(u => u.update_id));
+      this.#lastUpdateId = maxUpdateId;
 
       for (const update of data.result) {
-        this.#lastUpdateId = update.update_id;
         await this.#handleUpdate(update);
       }
     } catch (error) {
       // Silently ignore polling errors
+    } finally {
+      this.#isPolling = false;
     }
   }
 
