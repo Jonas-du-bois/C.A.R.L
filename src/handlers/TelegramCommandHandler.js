@@ -595,7 +595,7 @@ export class TelegramCommandHandler {
    */
   async #generateBriefReport() {
     const stats = this.#messageRepo.getQuickStats();
-    const conversations = this.#messageRepo.getConversationsForReport(5);
+    const conversations = this.#messageRepo.getConversationsForReport(5) || [];
     const calendarService = this.#cronService.getCalendarService();
     
     const now = new Date().toLocaleDateString('fr-CH', { 
@@ -611,20 +611,20 @@ export class TelegramCommandHandler {
     brief += `━━━━━━━━━━━━━━━━━━━━\n\n`;
 
     // Stats rapides
-    const total = stats.received + stats.sent;
-    brief += `📊 <b>Activité:</b> ${total} messages (${stats.received}↓ ${stats.sent}↑)\n`;
-    brief += `👥 <b>Contacts:</b> ${stats.contacts} actifs\n\n`;
+    const total = (stats?.received || 0) + (stats?.sent || 0);
+    brief += `📊 <b>Activité:</b> ${total} messages (${stats?.received || 0}↓ ${stats?.sent || 0}↑)\n`;
+    brief += `👥 <b>Contacts:</b> ${stats?.contacts || 0} actifs\n\n`;
 
     // Messages urgents/importants
-    if (conversations.conversations && conversations.conversations.length > 0) {
-      const urgentConvs = conversations.conversations.filter(c => 
-        c.stats.urgencies?.high || c.stats.urgencies?.critical
+    if (conversations && conversations.length > 0) {
+      const urgentConvs = conversations.filter(c => 
+        c.stats?.urgencies?.high || c.stats?.urgencies?.critical
       );
       
       if (urgentConvs.length > 0) {
         brief += `🚨 <b>URGENT (${urgentConvs.length}):</b>\n`;
         urgentConvs.slice(0, 3).forEach(c => {
-          const lastMsg = c.messages[c.messages.length - 1];
+          const lastMsg = c.messages?.[c.messages.length - 1];
           const preview = (lastMsg?.body || '').substring(0, 60);
           brief += `• ${c.contactName}: "${preview}${preview.length >= 60 ? '...' : ''}"\n`;
         });
@@ -633,14 +633,16 @@ export class TelegramCommandHandler {
 
       // Top 5 contacts les plus actifs avec aperçu
       brief += `💬 <b>CONVERSATIONS:</b>\n`;
-      conversations.conversations.slice(0, 5).forEach(c => {
-        const lastMsg = c.messages[c.messages.length - 1];
+      conversations.slice(0, 5).forEach(c => {
+        const lastMsg = c.messages?.[c.messages.length - 1];
         const preview = (lastMsg?.body || '').substring(0, 40);
         const icon = lastMsg?.direction === 'outgoing' ? '↩️' : '💬';
-        brief += `${icon} <b>${c.contactName}</b> (${c.messages.length})\n`;
+        brief += `${icon} <b>${c.contactName}</b> (${c.messages?.length || 0})\n`;
         brief += `   └ "${preview}${preview.length >= 40 ? '...' : ''}"\n`;
       });
       brief += '\n';
+    } else {
+      brief += `💬 <b>CONVERSATIONS:</b> Aucune aujourd'hui\n\n`;
     }
 
     // Prochains événements agenda

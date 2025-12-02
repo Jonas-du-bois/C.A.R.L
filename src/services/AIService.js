@@ -787,7 +787,7 @@ RÈGLES FINALES IMPORTANTES:
     } catch (error) {
       console.error('Failed to generate AI report:', error);
       return {
-        formatted: this.#formatBasicReport(stats, messages),
+        formatted: this.#formatBasicReport(stats, totalMessages),
         raw: null
       };
     }
@@ -1076,7 +1076,7 @@ RÈGLES FINALES IMPORTANTES:
     return report;
   }
 
-  #formatBasicReport(stats, messages) {
+  #formatBasicReport(stats, messageCount) {
     const now = new Date().toLocaleString('fr-CH', {
       weekday: 'long',
       day: 'numeric',
@@ -1094,29 +1094,13 @@ RÈGLES FINALES IMPORTANTES:
     report += `┌─────────────────────────────────┐\n`;
     report += `│ 📊 <b>STATISTIQUES</b>         │\n`;
     report += `└─────────────────────────────────┘\n\n`;
-    report += `├ 📥 Messages reçus : ${stats.received}\n`;
-    report += `├ 📤 Réponses       : ${stats.sent}\n`;
-    report += `└ 👥 Contacts       : ${stats.contacts}\n\n`;
+    report += `├ 📥 Messages reçus : ${stats?.received || 0}\n`;
+    report += `├ 📤 Réponses       : ${stats?.sent || 0}\n`;
+    report += `├ 👥 Contacts       : ${stats?.contacts || 0}\n`;
+    report += `└ 💬 Total messages : ${messageCount || 0}\n\n`;
     
-    if (stats.errors > 0) {
+    if (stats?.errors > 0) {
       report += `⚠️ ${stats.errors} erreur(s) détectée(s)\n\n`;
-    }
-
-    if (messages.length > 0) {
-      report += `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
-      report += `┌─────────────────────────────────┐\n`;
-      report += `│ 💬 <b>MESSAGES À TRAITER</b>   │\n`;
-      report += `└─────────────────────────────────┘\n\n`;
-      
-      messages.slice(-10).forEach(m => {
-        const sender = m.push_name || m.phone_number.split('@')[0];
-        const time = new Date(m.received_at).toLocaleString('fr-CH', { 
-          hour: '2-digit', 
-          minute: '2-digit' 
-        });
-        report += `📱 <b>${sender}</b> (${time})\n`;
-        report += `   <i>"${m.body.substring(0, 150)}${m.body.length > 150 ? '...' : ''}"</i>\n\n`;
-      });
     }
 
     report += `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
@@ -1157,6 +1141,10 @@ RÈGLES FINALES IMPORTANTES:
     report += `\n🎯 <i>À votre service si vous avez besoin de quoi que ce soit.</i>\n`;
     report += `\n<code>— C.A.R.L. v2.0 | Votre assistant personnel</code>`;
 
-    return report;
+    // Retourner le format attendu {formatted, raw}
+    return {
+      formatted: report,
+      raw: null
+    };
   }
 }
