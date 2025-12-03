@@ -83,6 +83,7 @@ export class TelegramCommandHandler {
     this.#registerConfirmCallbacks();     // Nouveau: confirmation d'événements
     this.#registerCalendarCallbacks();    // Nouveau: sélection de calendrier
     this.#registerEditCallbacks();        // Nouveau: modification d'événements
+    this.#registerTitleInputHandler();    // Nouveau: capture du nouveau titre
 
     this.#telegram.startPolling();
     this.#logger.info('Telegram commands registered');
@@ -549,11 +550,26 @@ export class TelegramCommandHandler {
       }
 
       const calendarService = this.#cronService.getCalendarService();
-      const calendars = await calendarService.getCalendarList();
+      let calendars = await calendarService.getCalendarList();
       
+      // Si aucun calendrier trouvé via l'API, utiliser le calendrier par défaut configuré
       if (calendars.length === 0) {
-        await this.#telegram.sendMessage('❌ Aucun calendrier disponible.');
-        return;
+        const defaultCalendarId = this.#config.google?.calendarId;
+        if (defaultCalendarId) {
+          calendars = [{
+            id: defaultCalendarId,
+            name: 'Calendrier principal',
+            primary: true,
+            accessRole: 'owner'
+          }];
+        } else {
+          await this.#telegram.sendMessage(
+            '❌ <b>Aucun calendrier disponible</b>\n\n' +
+            'Vérifiez que les calendriers sont partagés avec le service account Google.\n' +
+            'L\'événement sera créé dans le calendrier par défaut.'
+          );
+          return;
+        }
       }
 
       let message = `📅 <b>CHOISIR LE CALENDRIER</b>\n`;
@@ -795,6 +811,28 @@ export class TelegramCommandHandler {
         `💡 <i>Ou cliquez sur Retour pour annuler.</i>`,
         { inlineKeyboard: [[{ text: '⬅️ Retour', callback_data: `back_${eventId}` }]] }
       );
+    });
+  }
+
+  /**
+   * Handler pour la capture du nouveau titre (message texte non-commande)
+   */
+  #registerTitleInputHandler() {
+    this.#telegram.onCallback('title_input_', async (newTitle, eventId) => {
+      const pending = this.#telegram.getPendingEvent(eventId);
+      
+      if (!pending || pending.step !== 'edit_title') {
+        return; // Ignorer si pas en mode édition
+      }
+
+      // Mettre à jour le titre
+      pending.event.summary = newTitle;
+      pending.step = 'confirm'; // Revenir au mode confirmation
+      
+      this.#telegram.updatePendingEvent(eventId, pending);
+      
+      await this.#telegram.sendMessage(`✅ Titre modifié: <b>${newTitle}</b>`);
+      await this.#showEventConfirmation(eventId, pending.event);
     });
   }
 

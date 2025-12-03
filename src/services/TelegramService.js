@@ -76,6 +76,19 @@ export class TelegramService {
   }
 
   /**
+   * Trouve un événement en attente qui est en mode édition de titre
+   * @returns {{ eventId: string, data: Object } | null}
+   */
+  findPendingEventAwaitingTitle() {
+    for (const [eventId, data] of this.#pendingEvents) {
+      if (data.step === 'edit_title') {
+        return { eventId, data };
+      }
+    }
+    return null;
+  }
+
+  /**
    * Nettoie les événements en attente de plus d'1 heure
    */
   #cleanupOldPendingEvents() {
@@ -185,16 +198,31 @@ export class TelegramService {
     }
 
     const text = message.text.trim();
-    if (!text.startsWith('/')) return;
-
-    const [command, ...args] = text.slice(1).split(' ');
     
-    // Protection anti-doublon: ignorer si la même commande a été reçue récemment
+    // Protection anti-doublon: ignorer si le même message a été reçu récemment
     const commandKey = `${userId}|${message.message_id}`;
     if (this.#recentCommands.has(commandKey)) {
       console.log(`[TelegramService] Ignoring duplicate message ID: ${message.message_id}`);
       return;
     }
+    this.#recentCommands.set(commandKey, Date.now());
+
+    // Vérifier si on attend un nouveau titre pour un événement
+    if (!text.startsWith('/')) {
+      const pendingTitle = this.findPendingEventAwaitingTitle();
+      if (pendingTitle) {
+        // Appeler le handler de titre s'il est enregistré
+        const titleHandler = this.#callbackHandlers.get('title_input_');
+        if (titleHandler) {
+          await titleHandler(text, pendingTitle.eventId);
+        }
+        return;
+      }
+      // Si ce n'est pas une commande et pas d'attente de titre, ignorer
+      return;
+    }
+
+    const [command, ...args] = text.slice(1).split(' ');
     this.#recentCommands.set(commandKey, Date.now());
     
     // Nettoyer les anciennes entrées (> 60 secondes)

@@ -122,6 +122,7 @@ export class CalendarService {
 
   /**
    * Vérifie s'il y a des conflits avec des événements existants
+   * Vérifie TOUS les calendriers accessibles + le calendrier par défaut
    * @param {Date} startTime - Heure de début de l'événement proposé
    * @param {number} durationMinutes - Durée en minutes (défaut: 60)
    * @returns {{ hasConflict: boolean, conflicts: Array, suggestion: Date|null }}
@@ -141,11 +142,31 @@ export class CalendarService {
       dayEnd.setHours(23, 59, 59, 999);
 
       // Récupérer tous les calendriers
-      const calendars = await this.getCalendarList();
+      let calendars = await this.getCalendarList();
       
+      // Si aucun calendrier trouvé via l'API, utiliser le calendrier par défaut
+      if (calendars.length === 0 && this.#config.google?.calendarId) {
+        calendars = [{
+          id: this.#config.google.calendarId,
+          name: 'Calendrier principal'
+        }];
+      }
+      
+      // S'assurer que le calendrier par défaut est inclus (évite les doublons)
+      const defaultCalId = this.#config.google?.calendarId;
+      if (defaultCalId && !calendars.some(c => c.id === defaultCalId)) {
+        calendars.push({
+          id: defaultCalId,
+          name: 'Calendrier principal'
+        });
+      }
+
       if (calendars.length === 0) {
+        console.warn('[CalendarService] No calendars available for conflict check');
         return { hasConflict: false, conflicts: [], suggestion: null };
       }
+      
+      console.log(`[CalendarService] Checking conflicts across ${calendars.length} calendar(s)`);
 
       // Récupérer les événements de chaque calendrier pour ce jour
       const allEventsPromises = calendars.map(async (cal) => {
