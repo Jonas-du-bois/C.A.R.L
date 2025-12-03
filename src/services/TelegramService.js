@@ -8,7 +8,8 @@ export class TelegramService {
   #lastUpdateId = 0;
   #commandHandlers = new Map();
   #callbackHandlers = new Map();
-  #recentCommands = new Map(); // key: userId|text -> timestamp
+  #recentCommands = new Map();   // key: userId|text -> timestamp
+  #processedMessageIds = new Set(); // IDs de messages déjà traités
   
   // ============================================
   // SESSION STATE - Pour workflow interactif
@@ -169,6 +170,20 @@ export class TelegramService {
     const message = update.message;
     if (!message?.text) return;
 
+    // Protection par message_id: ignorer les messages déjà traités
+    const messageId = message.message_id;
+    if (this.#processedMessageIds.has(messageId)) {
+      console.log(`[TelegramService] Ignoring already processed message ID: ${messageId}`);
+      return;
+    }
+    this.#processedMessageIds.add(messageId);
+    
+    // Nettoyer les anciens message IDs (garder les 100 derniers)
+    if (this.#processedMessageIds.size > 100) {
+      const idsArray = Array.from(this.#processedMessageIds);
+      this.#processedMessageIds = new Set(idsArray.slice(-50));
+    }
+
     const userId = message.chat.id.toString();
     
     // Vérification stricte: seul l'utilisateur autorisé peut utiliser le bot
@@ -181,18 +196,26 @@ export class TelegramService {
     if (!text.startsWith('/')) return;
 
     const [command, ...args] = text.slice(1).split(' ');
-    const handler = this.#commandHandlers.get(command.toLowerCase());
-
-    // Protection anti-doublon: ignorer la même commande du même utilisateur
-    // si elle est reçue deux fois en très peu de temps (race du polling)
+    
+    // Protection anti-doublon AVANT de chercher le handler
+    // Ignorer si la même commande a été reçue récemment (seuil: 5 secondes)
     const commandKey = `${userId}|${text}`;
     const lastTs = this.#recentCommands.get(commandKey) || 0;
     const now = Date.now();
-    if (now - lastTs < 1500) {
+    if (now - lastTs < 5000) {
       console.log(`[TelegramService] Ignoring duplicate command from ${userId}: ${text}`);
       return;
     }
     this.#recentCommands.set(commandKey, now);
+    
+    // Nettoyer les anciennes entrées (> 30 secondes)
+    for (const [key, ts] of this.#recentCommands) {
+      if (now - ts > 30000) {
+        this.#recentCommands.delete(key);
+      }
+    }
+
+    const handler = this.#commandHandlers.get(command.toLowerCase());
 
     if (handler) {
       try {
