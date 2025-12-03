@@ -80,6 +80,9 @@ export class TelegramCommandHandler {
     this.#registerTasksCommand();
     this.#registerTaskCallbacks();
     this.#registerEventCallbacks();
+    this.#registerConfirmCallbacks();     // Nouveau: confirmation d'événements
+    this.#registerCalendarCallbacks();    // Nouveau: sélection de calendrier
+    this.#registerEditCallbacks();        // Nouveau: modification d'événements
 
     this.#telegram.startPolling();
     this.#logger.info('Telegram commands registered');
@@ -351,6 +354,7 @@ export class TelegramCommandHandler {
 
   /**
    * Handler pour les clics sur les boutons d'événements
+   * Affiche maintenant une confirmation interactive au lieu de créer directement
    */
   #registerEventCallbacks() {
     this.#telegram.onCallback('event_', async (data) => {
@@ -375,7 +379,8 @@ export class TelegramCommandHandler {
       const eventData = {
         summary: `${evt.activite} avec ${evt.expediteur}`,
         description: `Proposé via WhatsApp\nQuand: ${evt.quand}`,
-        duration
+        duration,
+        originalEvent: evt
       };
 
       const parsed = this.#parseDate(evt.quand);
@@ -384,38 +389,412 @@ export class TelegramCommandHandler {
       // Vérifier les conflits sur tous les calendriers
       if (eventData.start) {
         const conflictCheck = await calendarService.checkConflicts(eventData.start, duration);
-        
-        if (conflictCheck.hasConflict) {
-          let conflictMsg = `⚠️ <b>Conflit détecté !</b>\n\n`;
-          conflictMsg += `L'horaire proposé (${eventData.start.toLocaleTimeString('fr-CH', { hour: '2-digit', minute: '2-digit' })}) entre en conflit avec:\n\n`;
-          
-          for (const c of conflictCheck.conflicts) {
-            const startStr = c.start.toLocaleTimeString('fr-CH', { hour: '2-digit', minute: '2-digit' });
-            const endStr = c.end.toLocaleTimeString('fr-CH', { hour: '2-digit', minute: '2-digit' });
-            conflictMsg += `📅 <b>${c.summary}</b>\n`;
-            conflictMsg += `   ${startStr} - ${endStr} (${c.calendarName})\n\n`;
-          }
-          
-          if (conflictCheck.suggestion) {
-            const suggestionStr = conflictCheck.suggestion.toLocaleTimeString('fr-CH', { hour: '2-digit', minute: '2-digit' });
-            conflictMsg += `\n💡 <b>Suggestion:</b> ${suggestionStr} serait disponible`;
-          }
-          
-          await this.#telegram.sendMessage(conflictMsg);
-          return;
-        }
+        eventData.hasConflict = conflictCheck.hasConflict;
+        eventData.conflicts = conflictCheck.conflicts;
+        eventData.suggestion = conflictCheck.suggestion;
       }
 
+      // Stocker l'événement en attente et afficher la confirmation
+      const eventId = this.#telegram.storePendingEvent(eventData);
+      await this.#showEventConfirmation(eventId, eventData);
+    });
+  }
+
+  /**
+   * Affiche le message de confirmation avec les détails de l'événement
+   */
+  async #showEventConfirmation(eventId, eventData) {
+    const calendarService = this.#cronService.getCalendarService();
+    
+    let message = `📅 <b>CONFIRMER L'ÉVÉNEMENT</b>\n`;
+    message += `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
+    
+    message += `📌 <b>Titre:</b> ${eventData.summary}\n`;
+    
+    if (eventData.start) {
+      const dateStr = eventData.start.toLocaleDateString('fr-CH', { 
+        weekday: 'long', 
+        day: 'numeric', 
+        month: 'long' 
+      });
+      const timeStr = eventData.start.toLocaleTimeString('fr-CH', { 
+        hour: '2-digit', 
+        minute: '2-digit' 
+      });
+      message += `📆 <b>Date:</b> ${dateStr}\n`;
+      message += `⏰ <b>Heure:</b> ${timeStr}\n`;
+    } else {
+      message += `📆 <b>Quand:</b> ${eventData.originalEvent?.quand || 'Non défini'}\n`;
+    }
+    
+    message += `⏱️ <b>Durée:</b> ${eventData.duration} minutes\n\n`;
+
+    // Afficher les conflits si présents
+    if (eventData.hasConflict && eventData.conflicts?.length > 0) {
+      message += `⚠️ <b>CONFLIT DÉTECTÉ:</b>\n`;
+      for (const c of eventData.conflicts) {
+        const startStr = c.start.toLocaleTimeString('fr-CH', { hour: '2-digit', minute: '2-digit' });
+        const endStr = c.end.toLocaleTimeString('fr-CH', { hour: '2-digit', minute: '2-digit' });
+        message += `   • ${c.summary} (${startStr} - ${endStr})\n`;
+      }
+      if (eventData.suggestion) {
+        const suggestionStr = eventData.suggestion.toLocaleTimeString('fr-CH', { hour: '2-digit', minute: '2-digit' });
+        message += `\n💡 <b>Suggestion:</b> ${suggestionStr} serait disponible\n`;
+      }
+      message += '\n';
+    } else if (eventData.start) {
+      message += `✅ <b>Pas de conflit détecté</b>\n\n`;
+    }
+
+    // Boutons d'action
+    const buttons = [
+      [
+        { text: '✅ Confirmer', callback_data: `confirm_${eventId}` },
+        { text: '📅 Calendrier', callback_data: `calendar_${eventId}` }
+      ],
+      [
+        { text: '✏️ Modifier date', callback_data: `editdate_${eventId}` },
+        { text: '✏️ Modifier heure', callback_data: `edittime_${eventId}` }
+      ],
+      [
+        { text: '✏️ Modifier titre', callback_data: `edittitle_${eventId}` },
+        { text: '❌ Annuler', callback_data: `cancel_${eventId}` }
+      ]
+    ];
+
+    // Ajouter bouton suggestion si conflit
+    if (eventData.hasConflict && eventData.suggestion) {
+      buttons.splice(1, 0, [
+        { text: `💡 Utiliser ${eventData.suggestion.toLocaleTimeString('fr-CH', { hour: '2-digit', minute: '2-digit' })}`, callback_data: `usesugg_${eventId}` }
+      ]);
+    }
+
+    await this.#telegram.sendMessage(message, { inlineKeyboard: buttons });
+  }
+
+  /**
+   * Handlers pour la confirmation d'événements
+   */
+  #registerConfirmCallbacks() {
+    // Confirmer l'événement
+    this.#telegram.onCallback('confirm_', async (data) => {
+      const eventId = data.replace('confirm_', '');
+      const pending = this.#telegram.getPendingEvent(eventId);
+      
+      if (!pending) {
+        await this.#telegram.sendMessage('❌ Événement expiré. Utilisez /tasks pour recommencer.');
+        return;
+      }
+
+      const calendarService = this.#cronService.getCalendarService();
+      const calendarId = pending.calendarId || this.#config.google.calendarId;
+      
       try {
-        const result = await calendarService.createEvent(eventData);
+        const result = await calendarService.createEvent({
+          ...pending.event,
+          calendarId
+        });
+        
         await this.#telegram.sendMessage(
-          `✅ <b>Événement ajouté à l'agenda !</b>\n\n` +
-          `📅 ${evt.activite} avec ${evt.expediteur}\n` +
-          `📍 ${evt.quand}\n${result}`
+          `✅ <b>Événement créé !</b>\n\n` +
+          `📅 ${pending.event.summary}\n` +
+          `${result}`
         );
+        
+        this.#telegram.removePendingEvent(eventId);
       } catch (error) {
         await this.#telegram.sendMessage(`❌ Erreur: ${error.message}`);
       }
+    });
+
+    // Annuler l'événement
+    this.#telegram.onCallback('cancel_', async (data) => {
+      const eventId = data.replace('cancel_', '');
+      this.#telegram.removePendingEvent(eventId);
+      await this.#telegram.sendMessage('❌ Événement annulé.');
+    });
+
+    // Utiliser la suggestion de créneau
+    this.#telegram.onCallback('usesugg_', async (data) => {
+      const eventId = data.replace('usesugg_', '');
+      const pending = this.#telegram.getPendingEvent(eventId);
+      
+      if (!pending || !pending.event.suggestion) {
+        await this.#telegram.sendMessage('❌ Événement expiré ou pas de suggestion.');
+        return;
+      }
+
+      // Mettre à jour l'heure avec la suggestion
+      pending.event.start = pending.event.suggestion;
+      pending.event.hasConflict = false;
+      pending.event.conflicts = [];
+      
+      this.#telegram.updatePendingEvent(eventId, pending);
+      await this.#showEventConfirmation(eventId, pending.event);
+    });
+  }
+
+  /**
+   * Handlers pour la sélection de calendrier
+   */
+  #registerCalendarCallbacks() {
+    // Afficher la liste des calendriers
+    this.#telegram.onCallback('calendar_', async (data) => {
+      const eventId = data.replace('calendar_', '');
+      const pending = this.#telegram.getPendingEvent(eventId);
+      
+      if (!pending) {
+        await this.#telegram.sendMessage('❌ Événement expiré. Utilisez /tasks pour recommencer.');
+        return;
+      }
+
+      const calendarService = this.#cronService.getCalendarService();
+      const calendars = await calendarService.getCalendarList();
+      
+      if (calendars.length === 0) {
+        await this.#telegram.sendMessage('❌ Aucun calendrier disponible.');
+        return;
+      }
+
+      let message = `📅 <b>CHOISIR LE CALENDRIER</b>\n`;
+      message += `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
+      message += `Pour: <b>${pending.event.summary}</b>\n\n`;
+
+      const buttons = calendars.map((cal, i) => {
+        const icon = cal.primary ? '⭐' : '📅';
+        return [{ 
+          text: `${icon} ${cal.name}`, 
+          callback_data: `selectcal_${eventId}_${i}` 
+        }];
+      });
+      
+      buttons.push([{ text: '⬅️ Retour', callback_data: `back_${eventId}` }]);
+
+      await this.#telegram.sendMessage(message, { inlineKeyboard: buttons });
+      
+      // Stocker la liste des calendriers pour référence
+      this.#telegram.updatePendingEvent(eventId, { 
+        ...pending, 
+        availableCalendars: calendars 
+      });
+    });
+
+    // Sélectionner un calendrier spécifique
+    this.#telegram.onCallback('selectcal_', async (data) => {
+      const parts = data.replace('selectcal_', '').split('_');
+      const eventId = parts[0];
+      const calendarIndex = parseInt(parts[1]);
+      
+      const pending = this.#telegram.getPendingEvent(eventId);
+      
+      if (!pending || !pending.availableCalendars?.[calendarIndex]) {
+        await this.#telegram.sendMessage('❌ Sélection invalide.');
+        return;
+      }
+
+      const selectedCalendar = pending.availableCalendars[calendarIndex];
+      this.#telegram.updatePendingEvent(eventId, { 
+        ...pending, 
+        calendarId: selectedCalendar.id,
+        calendarName: selectedCalendar.name 
+      });
+
+      await this.#telegram.sendMessage(
+        `✅ Calendrier sélectionné: <b>${selectedCalendar.name}</b>\n\n` +
+        `Cliquez sur ✅ Confirmer pour créer l'événement.`
+      );
+      
+      // Ré-afficher la confirmation avec le calendrier sélectionné
+      const updatedPending = this.#telegram.getPendingEvent(eventId);
+      await this.#showEventConfirmation(eventId, updatedPending.event);
+    });
+
+    // Retour à la confirmation
+    this.#telegram.onCallback('back_', async (data) => {
+      const eventId = data.replace('back_', '');
+      const pending = this.#telegram.getPendingEvent(eventId);
+      
+      if (!pending) {
+        await this.#telegram.sendMessage('❌ Événement expiré.');
+        return;
+      }
+
+      await this.#showEventConfirmation(eventId, pending.event);
+    });
+  }
+
+  /**
+   * Handlers pour la modification d'événements
+   */
+  #registerEditCallbacks() {
+    // Modifier la date
+    this.#telegram.onCallback('editdate_', async (data) => {
+      const eventId = data.replace('editdate_', '');
+      const pending = this.#telegram.getPendingEvent(eventId);
+      
+      if (!pending) {
+        await this.#telegram.sendMessage('❌ Événement expiré.');
+        return;
+      }
+
+      // Proposer les prochains jours
+      const buttons = [];
+      const today = new Date();
+      
+      for (let i = 0; i < 7; i++) {
+        const date = new Date(today);
+        date.setDate(today.getDate() + i);
+        const dayStr = date.toLocaleDateString('fr-CH', { weekday: 'short', day: 'numeric', month: 'short' });
+        const label = i === 0 ? `📅 Aujourd'hui (${dayStr})` : 
+                      i === 1 ? `📅 Demain (${dayStr})` : `📅 ${dayStr}`;
+        
+        buttons.push([{ 
+          text: label, 
+          callback_data: `setdate_${eventId}_${i}` 
+        }]);
+      }
+      
+      buttons.push([{ text: '⬅️ Retour', callback_data: `back_${eventId}` }]);
+
+      await this.#telegram.sendMessage(
+        `📆 <b>CHOISIR LA DATE</b>\n\n` +
+        `Pour: <b>${pending.event.summary}</b>`,
+        { inlineKeyboard: buttons }
+      );
+    });
+
+    // Appliquer la nouvelle date
+    this.#telegram.onCallback('setdate_', async (data) => {
+      const parts = data.replace('setdate_', '').split('_');
+      const eventId = parts[0];
+      const daysOffset = parseInt(parts[1]);
+      
+      const pending = this.#telegram.getPendingEvent(eventId);
+      if (!pending) {
+        await this.#telegram.sendMessage('❌ Événement expiré.');
+        return;
+      }
+
+      const newDate = new Date();
+      newDate.setDate(newDate.getDate() + daysOffset);
+      
+      // Conserver l'heure si elle existe
+      if (pending.event.start) {
+        newDate.setHours(pending.event.start.getHours(), pending.event.start.getMinutes(), 0, 0);
+      } else {
+        newDate.setHours(10, 0, 0, 0); // Défaut: 10h
+      }
+      
+      pending.event.start = newDate;
+      
+      // Revérifier les conflits
+      const calendarService = this.#cronService.getCalendarService();
+      const conflictCheck = await calendarService.checkConflicts(newDate, pending.event.duration);
+      pending.event.hasConflict = conflictCheck.hasConflict;
+      pending.event.conflicts = conflictCheck.conflicts;
+      pending.event.suggestion = conflictCheck.suggestion;
+      
+      this.#telegram.updatePendingEvent(eventId, pending);
+      await this.#showEventConfirmation(eventId, pending.event);
+    });
+
+    // Modifier l'heure
+    this.#telegram.onCallback('edittime_', async (data) => {
+      const eventId = data.replace('edittime_', '');
+      const pending = this.#telegram.getPendingEvent(eventId);
+      
+      if (!pending) {
+        await this.#telegram.sendMessage('❌ Événement expiré.');
+        return;
+      }
+
+      // Proposer des créneaux horaires courants
+      const timeSlots = [
+        { label: '🌅 8h00', hour: 8, min: 0 },
+        { label: '🌅 9h00', hour: 9, min: 0 },
+        { label: '☀️ 10h00', hour: 10, min: 0 },
+        { label: '☀️ 11h00', hour: 11, min: 0 },
+        { label: '🍽️ 12h00', hour: 12, min: 0 },
+        { label: '☀️ 14h00', hour: 14, min: 0 },
+        { label: '☀️ 15h00', hour: 15, min: 0 },
+        { label: '☀️ 16h00', hour: 16, min: 0 },
+        { label: '🌆 17h00', hour: 17, min: 0 },
+        { label: '🌆 18h00', hour: 18, min: 0 },
+        { label: '🌙 19h00', hour: 19, min: 0 },
+        { label: '🌙 20h00', hour: 20, min: 0 },
+        { label: '🌙 21h00', hour: 21, min: 0 }
+      ];
+
+      // Grouper par 3
+      const buttons = [];
+      for (let i = 0; i < timeSlots.length; i += 3) {
+        const row = timeSlots.slice(i, i + 3).map(slot => ({
+          text: slot.label,
+          callback_data: `settime_${eventId}_${slot.hour}_${slot.min}`
+        }));
+        buttons.push(row);
+      }
+      
+      buttons.push([{ text: '⬅️ Retour', callback_data: `back_${eventId}` }]);
+
+      await this.#telegram.sendMessage(
+        `⏰ <b>CHOISIR L'HEURE</b>\n\n` +
+        `Pour: <b>${pending.event.summary}</b>`,
+        { inlineKeyboard: buttons }
+      );
+    });
+
+    // Appliquer la nouvelle heure
+    this.#telegram.onCallback('settime_', async (data) => {
+      const parts = data.replace('settime_', '').split('_');
+      const eventId = parts[0];
+      const hour = parseInt(parts[1]);
+      const min = parseInt(parts[2]);
+      
+      const pending = this.#telegram.getPendingEvent(eventId);
+      if (!pending) {
+        await this.#telegram.sendMessage('❌ Événement expiré.');
+        return;
+      }
+
+      if (!pending.event.start) {
+        pending.event.start = new Date();
+      }
+      
+      // Correction timezone: Docker UTC -> Europe/Zurich (UTC+1)
+      pending.event.start.setHours(hour - 1, min, 0, 0);
+      
+      // Revérifier les conflits
+      const calendarService = this.#cronService.getCalendarService();
+      const conflictCheck = await calendarService.checkConflicts(pending.event.start, pending.event.duration);
+      pending.event.hasConflict = conflictCheck.hasConflict;
+      pending.event.conflicts = conflictCheck.conflicts;
+      pending.event.suggestion = conflictCheck.suggestion;
+      
+      this.#telegram.updatePendingEvent(eventId, pending);
+      await this.#showEventConfirmation(eventId, pending.event);
+    });
+
+    // Modifier le titre
+    this.#telegram.onCallback('edittitle_', async (data) => {
+      const eventId = data.replace('edittitle_', '');
+      const pending = this.#telegram.getPendingEvent(eventId);
+      
+      if (!pending) {
+        await this.#telegram.sendMessage('❌ Événement expiré.');
+        return;
+      }
+
+      // Marquer qu'on attend un nouveau titre
+      this.#telegram.updatePendingEvent(eventId, { ...pending, step: 'edit_title' });
+      
+      await this.#telegram.sendMessage(
+        `✏️ <b>MODIFIER LE TITRE</b>\n\n` +
+        `Titre actuel: <b>${pending.event.summary}</b>\n\n` +
+        `Envoyez le nouveau titre en réponse.\n\n` +
+        `💡 <i>Ou cliquez sur Retour pour annuler.</i>`,
+        { inlineKeyboard: [[{ text: '⬅️ Retour', callback_data: `back_${eventId}` }]] }
+      );
     });
   }
 

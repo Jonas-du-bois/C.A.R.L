@@ -346,6 +346,215 @@ Return a JSON object with a single "summary" field containing a concise French s
   static MAX_TOTAL_MESSAGES_DIRECT = 50;    // Total messages avant mode adaptatif
   static MAX_CONVERSATIONS_PER_REQUEST = 15; // Limite de conversations par requête
 
+  // ============================================
+  // EXTRACTION D'ÉVÉNEMENTS AVEC CONTEXTE DE DATE
+  // ============================================
+
+  /**
+   * Extrait les événements et rendez-vous des conversations avec un parsing de date intelligent.
+   * Résout les références relatives ("le 28", "vendredi", "demain") en dates absolues.
+   * 
+   * @param {Array} conversations - Conversations à analyser
+   * @returns {Promise<{events: Array, ambiguous: Array}>} Événements extraits
+   */
+  async extractEventsFromConversations(conversations) {
+    if (!conversations || conversations.length === 0) {
+      return { events: [], ambiguous: [] };
+    }
+
+    // Contexte de date actuel pour le prompt
+    const now = new Date();
+    const dateContext = {
+      today: now.toLocaleDateString('fr-CH', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }),
+      dayOfWeek: now.toLocaleDateString('fr-CH', { weekday: 'long' }),
+      dayNumber: now.getDate(),
+      month: now.toLocaleDateString('fr-CH', { month: 'long' }),
+      monthNumber: now.getMonth() + 1,
+      year: now.getFullYear(),
+      nextMonday: this.#getNextMonday(now),
+      nextWeekend: this.#getNextWeekend(now)
+    };
+
+    // Formater les messages pertinents
+    const messagesText = conversations.flatMap(conv => 
+      conv.messages.map(msg => {
+        const time = new Date(msg.timestamp).toLocaleString('fr-CH');
+        return `[${time}] ${conv.contactName}: "${msg.body}"`;
+      })
+    ).join('\n');
+
+    const prompt = `Tu es un expert en extraction de dates et d'événements.
+
+CONTEXTE DE DATE ACTUEL (TRÈS IMPORTANT):
+- Aujourd'hui: ${dateContext.today}
+- Jour de la semaine: ${dateContext.dayOfWeek}
+- Numéro du jour: ${dateContext.dayNumber}
+- Mois actuel: ${dateContext.month} (${dateContext.monthNumber})
+- Année: ${dateContext.year}
+- Prochain lundi: ${dateContext.nextMonday}
+- Prochain weekend: ${dateContext.nextWeekend}
+
+MESSAGES À ANALYSER:
+${messagesText}
+
+RÈGLES D'EXTRACTION DE DATES (CRITIQUES):
+1. "le 28" ou "le 15" SANS mois → C'est le jour du MOIS EN COURS (${dateContext.month} ${dateContext.year})
+   - Si le numéro est DÉJÀ PASSÉ ce mois-ci (< ${dateContext.dayNumber}), alors c'est le mois SUIVANT
+   
+2. "vendredi", "samedi", etc. → Le PROCHAIN jour de la semaine à venir
+   - Si on est mercredi et qu'on parle de "vendredi" → C'est ce vendredi (dans 2 jours)
+   - Si on est samedi et qu'on parle de "vendredi" → C'est le vendredi SUIVANT (dans 6 jours)
+
+3. "demain" → ${this.#addDays(now, 1).toLocaleDateString('fr-CH', { weekday: 'long', day: 'numeric', month: 'long' })}
+
+4. "ce soir" → Aujourd'hui ${dateContext.today}
+
+5. "la semaine prochaine" → Semaine du ${dateContext.nextMonday}
+
+6. "ce weekend" → ${dateContext.nextWeekend}
+
+GÉNÈRE UN JSON AVEC CETTE STRUCTURE:
+{
+  "events": [
+    {
+      "contact": "Nom de la personne",
+      "activity": "Type d'activité (volley, café, réunion, etc.)",
+      "originalText": "Le texte original qui mentionne l'événement",
+      "parsedDate": "YYYY-MM-DD",
+      "parsedTime": "HH:MM ou null si non spécifié",
+      "estimatedDuration": 60,
+      "confidence": 0.0 à 1.0,
+      "reasoning": "Explication du parsing de date"
+    }
+  ],
+  "ambiguous": [
+    {
+      "contact": "Nom",
+      "originalText": "Texte ambigu",
+      "possibleInterpretations": ["Interprétation 1", "Interprétation 2"],
+      "needsClarification": true
+    }
+  ]
+}
+
+IMPORTANT: 
+- Extrais TOUS les événements mentionnés, même implicites
+- Si l'heure n'est pas précisée, laisse parsedTime à null
+- Mets confidence à 1.0 si la date est explicite, 0.7-0.9 si déduite, <0.7 si incertaine
+- Si un événement est trop ambigu, mets-le dans "ambiguous" au lieu de "events"`;
+
+    try {
+      let result;
+      switch (this.#provider) {
+        case 'gemini':
+          result = await this.#callGeminiExtraction(prompt);
+          break;
+        case 'openai':
+        case 'groq':
+          result = await this.#callChatExtraction(prompt);
+          break;
+        default:
+          return { events: [], ambiguous: [] };
+      }
+      
+      return {
+        events: result.events || [],
+        ambiguous: result.ambiguous || []
+      };
+    } catch (error) {
+      console.error('[AIService] Failed to extract events:', error);
+      return { events: [], ambiguous: [] };
+    }
+  }
+
+  /**
+   * Appel Gemini pour extraction d'événements
+   */
+  async #callGeminiExtraction(prompt) {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${this.#model}:generateContent?key=${this.#apiKey}`;
+    
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: {
+          temperature: 0.3, // Basse température pour plus de précision
+          maxOutputTokens: 2000,
+          responseMimeType: "application/json"
+        }
+      })
+    });
+
+    if (!response.ok) throw new Error('Gemini extraction API error');
+    const data = await response.json();
+    const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+    return JSON.parse(text);
+  }
+
+  /**
+   * Appel Chat API (OpenAI/Groq) pour extraction d'événements
+   */
+  async #callChatExtraction(prompt) {
+    const endpoint = this.#provider === 'groq' 
+      ? 'https://api.groq.com/openai/v1/chat/completions'
+      : 'https://api.openai.com/v1/chat/completions';
+
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${this.#apiKey}`
+      },
+      body: JSON.stringify({
+        model: this.#model,
+        messages: [{ role: 'user', content: prompt }],
+        response_format: { type: 'json_object' },
+        max_tokens: 2000,
+        temperature: 0.3
+      })
+    });
+
+    if (!response.ok) throw new Error('Chat extraction API error');
+    const data = await response.json();
+    return JSON.parse(data.choices[0].message.content);
+  }
+
+  // ============================================
+  // HELPERS POUR CALCUL DE DATES
+  // ============================================
+
+  /**
+   * Calcule le prochain lundi
+   */
+  #getNextMonday(date) {
+    const d = new Date(date);
+    const dayOfWeek = d.getDay();
+    const daysUntilMonday = dayOfWeek === 0 ? 1 : (8 - dayOfWeek);
+    d.setDate(d.getDate() + daysUntilMonday);
+    return d.toLocaleDateString('fr-CH', { weekday: 'long', day: 'numeric', month: 'long' });
+  }
+
+  /**
+   * Calcule le prochain weekend (samedi)
+   */
+  #getNextWeekend(date) {
+    const d = new Date(date);
+    const dayOfWeek = d.getDay();
+    const daysUntilSaturday = dayOfWeek === 6 ? 7 : (6 - dayOfWeek);
+    d.setDate(d.getDate() + daysUntilSaturday);
+    return d.toLocaleDateString('fr-CH', { weekday: 'long', day: 'numeric', month: 'long' });
+  }
+
+  /**
+   * Ajoute des jours à une date
+   */
+  #addDays(date, days) {
+    const d = new Date(date);
+    d.setDate(d.getDate() + days);
+    return d;
+  }
+
   /**
    * Formate les conversations de manière lisible pour l'IA
    * Chaque conversation est présentée comme un fil de discussion

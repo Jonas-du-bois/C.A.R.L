@@ -9,11 +9,82 @@ export class TelegramService {
   #commandHandlers = new Map();
   #callbackHandlers = new Map();
   #recentCommands = new Map(); // key: userId|text -> timestamp
+  
+  // ============================================
+  // SESSION STATE - Pour workflow interactif
+  // ============================================
+  #pendingEvents = new Map();  // key: eventId -> { event, step, calendarId }
+  #sessionCounter = 0;         // Compteur pour générer des IDs uniques
 
   constructor(config) {
     this.#botToken = config.telegram.botToken;
     this.#adminId = config.telegram.adminId;
     this.#allowedUserId = config.telegram.allowedUserId || config.telegram.adminId;
+  }
+
+  // ============================================
+  // GESTION DES ÉVÉNEMENTS EN ATTENTE
+  // ============================================
+
+  /**
+   * Stocke un événement en attente de confirmation
+   * @param {Object} eventData - Données de l'événement
+   * @returns {string} ID unique de l'événement en attente
+   */
+  storePendingEvent(eventData) {
+    const eventId = `evt_${++this.#sessionCounter}`;
+    this.#pendingEvents.set(eventId, {
+      event: eventData,
+      step: 'confirm',  // 'confirm', 'select_calendar', 'edit_date', 'edit_time', 'edit_title'
+      calendarId: null,
+      createdAt: Date.now()
+    });
+    
+    // Nettoyer les anciens événements (> 1 heure)
+    this.#cleanupOldPendingEvents();
+    
+    return eventId;
+  }
+
+  /**
+   * Récupère un événement en attente
+   * @param {string} eventId - ID de l'événement
+   * @returns {Object|null} Données de l'événement ou null
+   */
+  getPendingEvent(eventId) {
+    return this.#pendingEvents.get(eventId) || null;
+  }
+
+  /**
+   * Met à jour un événement en attente
+   * @param {string} eventId - ID de l'événement
+   * @param {Object} updates - Propriétés à mettre à jour
+   */
+  updatePendingEvent(eventId, updates) {
+    const pending = this.#pendingEvents.get(eventId);
+    if (pending) {
+      this.#pendingEvents.set(eventId, { ...pending, ...updates });
+    }
+  }
+
+  /**
+   * Supprime un événement en attente
+   * @param {string} eventId - ID de l'événement
+   */
+  removePendingEvent(eventId) {
+    this.#pendingEvents.delete(eventId);
+  }
+
+  /**
+   * Nettoie les événements en attente de plus d'1 heure
+   */
+  #cleanupOldPendingEvents() {
+    const oneHourAgo = Date.now() - (60 * 60 * 1000);
+    for (const [eventId, data] of this.#pendingEvents) {
+      if (data.createdAt < oneHourAgo) {
+        this.#pendingEvents.delete(eventId);
+      }
+    }
   }
 
   /**

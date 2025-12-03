@@ -638,8 +638,11 @@ export class CalendarService {
         end: { dateTime: end.toISOString() },
       };
 
+      // Utiliser le calendarId fourni ou celui par défaut
+      const targetCalendarId = input.calendarId || this.#config.google.calendarId;
+
       const res = await this.#calendar.events.insert({
-        calendarId: this.#config.google.calendarId,
+        calendarId: targetCalendarId,
         resource: event,
       });
 
