@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
-import { sanitizePhoneNumber, sanitizeMessageContent } from '../../src/utils/Sanitizer.js';
+import { sanitizePhoneNumber, sanitizeMessageContent, escapeHtml } from '../../src/utils/Sanitizer.js';
 
 describe('Sanitizer', () => {
   describe('sanitizePhoneNumber', () => {
@@ -77,6 +77,29 @@ describe('Sanitizer', () => {
     it('should preserve normal characters', () => {
       const input = 'Hello World! 123 éàü';
       assert.strictEqual(sanitizeMessageContent(input), input);
+    });
+  });
+
+  describe('escapeHtml', () => {
+    it('should escape HTML special characters', () => {
+      const input = '<script>alert("xss")&\'</script>';
+      const expected = '&lt;script&gt;alert(&quot;xss&quot;)&amp;&#039;&lt;/script&gt;';
+      assert.strictEqual(escapeHtml(input), expected);
+    });
+
+    it('should return empty string for null/undefined', () => {
+      assert.strictEqual(escapeHtml(null), '');
+      assert.strictEqual(escapeHtml(undefined), '');
+    });
+
+    it('should handle numbers', () => {
+      assert.strictEqual(escapeHtml(123), '123');
+      assert.strictEqual(escapeHtml(0), '0');
+    });
+
+    it('should not change safe strings', () => {
+      const input = 'Hello World';
+      assert.strictEqual(escapeHtml(input), input);
     });
   });
 });
