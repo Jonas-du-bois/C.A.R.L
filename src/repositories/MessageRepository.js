@@ -17,47 +17,26 @@ export class MessageRepository {
   findOrCreateContact(phoneNumber, metadata = {}) {
     const now = Date.now();
     
-    const existing = this.#db.prepare(`
-      SELECT * FROM contacts WHERE phone_number = ?
-    `).get(phoneNumber);
-
-    if (existing) {
-      // Update last seen and metadata
-      this.#db.prepare(`
-        UPDATE contacts 
-        SET last_seen_at = ?,
-            push_name = COALESCE(?, push_name),
-            display_name = COALESCE(?, display_name),
-            updated_at = ?
-        WHERE id = ?
-      `).run(now, metadata.pushName, metadata.displayName, now, existing.id);
-      
-      return { ...existing, last_seen_at: now };
-    }
-
-    const result = this.#db.prepare(`
-      INSERT INTO contacts (phone_number, push_name, display_name, is_group, first_seen_at, last_seen_at)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `).run(
+    // ⚡ Bolt: Optimized to single UPSERT query with RETURNING *
+    // This reduces DB roundtrips and handles concurrency better
+    return this.#db.prepare(`
+      INSERT INTO contacts (phone_number, push_name, display_name, is_group, first_seen_at, last_seen_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(phone_number) DO UPDATE SET
+        last_seen_at = excluded.last_seen_at,
+        push_name = COALESCE(excluded.push_name, contacts.push_name),
+        display_name = COALESCE(excluded.display_name, contacts.display_name),
+        updated_at = excluded.updated_at
+      RETURNING *
+    `).get(
       phoneNumber,
       metadata.pushName || null,
       metadata.displayName || null,
       metadata.isGroup ? 1 : 0,
       now,
+      now,
       now
     );
-
-    return {
-      id: result.lastInsertRowid,
-      phone_number: phoneNumber,
-      push_name: metadata.pushName,
-      display_name: metadata.displayName,
-      is_group: metadata.isGroup ? 1 : 0,
-      first_seen_at: now,
-      last_seen_at: now,
-      total_messages_received: 0,
-      total_messages_sent: 0
-    };
   }
 
   getContactById(contactId) {
