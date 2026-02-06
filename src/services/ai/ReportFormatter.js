@@ -6,6 +6,7 @@
  * 
  * @module services/ai/ReportFormatter
  */
+import { escapeHtml } from '../../utils/Sanitizer.js';
 
 // ============================================
 // CLASSE PRINCIPALE
@@ -97,7 +98,9 @@ export class ReportFormatter {
     if (messages?.length > 0) {
       report += `📨 <b>Derniers messages:</b>\n`;
       messages.slice(0, 5).forEach(m => {
-        report += `• ${m.phone_number?.split('@')[0]}: "${(m.body || '').substring(0, 50)}..."\n`;
+        const phone = m.phone_number?.split('@')[0];
+        const body = (m.body || '').substring(0, 50);
+        report += `• ${escapeHtml(phone)}: "${escapeHtml(body)}..."\n`;
       });
     }
 
@@ -128,7 +131,7 @@ export class ReportFormatter {
     if (agendaSummary?.events?.length > 0) {
       report += `📅 <b>Agenda à venir:</b>\n`;
       agendaSummary.events.forEach(e => {
-        report += `• ${e.day}: ${e.title} à ${e.start}\n`;
+        report += `• ${e.day}: ${escapeHtml(e.title)} à ${e.start}\n`;
       });
     }
 
@@ -189,13 +192,13 @@ export class ReportFormatter {
         basse: '🟢'
       }[m.urgence] || '⚪';
 
-      section += `${urgencyIcon} <b>${i + 1}. ${this.#escapeHtml(m.expediteur)}</b>\n`;
-      section += `   📝 "${this.#escapeHtml((m.message_original || '').substring(0, 100))}"\n`;
-      section += `   ➡️ <b>Action:</b> ${this.#escapeHtml(m.action_requise)}\n`;
+      section += `${urgencyIcon} <b>${i + 1}. ${escapeHtml(m.expediteur)}</b>\n`;
+      section += `   📝 "${escapeHtml((m.message_original || '').substring(0, 100))}"\n`;
+      section += `   ➡️ <b>Action:</b> ${escapeHtml(m.action_requise)}\n`;
       
       if (m.brouillon_reponse) {
         section += `   💬 <i>Réponse suggérée:</i>\n`;
-        section += `   "${this.#escapeHtml(m.brouillon_reponse)}"\n`;
+        section += `   "${escapeHtml(m.brouillon_reponse)}"\n`;
       }
       section += `\n`;
     });
@@ -211,7 +214,7 @@ export class ReportFormatter {
     section += `└─────────────────────────────────┘\n\n`;
 
     messages.forEach(m => {
-      section += `• <b>${this.#escapeHtml(m.expediteur)}:</b> ${this.#escapeHtml(m.resume)}\n`;
+      section += `• <b>${escapeHtml(m.expediteur)}:</b> ${escapeHtml(m.resume)}\n`;
     });
     section += '\n';
 
@@ -227,10 +230,10 @@ export class ReportFormatter {
 
     taches.forEach((t, i) => {
       const prioIcon = { haute: '🔴', moyenne: '🟡', basse: '🟢' }[t.priorite] || '⚪';
-      section += `${prioIcon} <b>${i + 1}. ${this.#escapeHtml(t.titre)}</b>\n`;
-      section += `   ${this.#escapeHtml(t.description)}\n`;
+      section += `${prioIcon} <b>${i + 1}. ${escapeHtml(t.titre)}</b>\n`;
+      section += `   ${escapeHtml(t.description)}\n`;
       if (t.deadline) {
-        section += `   ⏰ Deadline: ${t.deadline}\n`;
+        section += `   ⏰ Deadline: ${escapeHtml(t.deadline)}\n`;
       }
       section += `\n`;
     });
@@ -249,11 +252,11 @@ export class ReportFormatter {
     if (evenements.length > 0) {
       section += `<b>Événements proposés:</b>\n`;
       evenements.forEach(e => {
-        section += `🗓️ <b>${this.#escapeHtml(e.activite)}</b> avec ${this.#escapeHtml(e.expediteur)}\n`;
-        section += `   📍 ${e.quand}\n`;
+        section += `🗓️ <b>${escapeHtml(e.activite)}</b> avec ${escapeHtml(e.expediteur)}\n`;
+        section += `   📍 ${escapeHtml(e.quand)}\n`;
         section += `   ${e.disponibilite_jonas === 'LIBRE' ? '✅' : '⚠️'} ${e.disponibilite_jonas}\n`;
         if (e.reponse_suggérée) {
-          section += `   💬 "${this.#escapeHtml(e.reponse_suggérée)}"\n`;
+          section += `   💬 "${escapeHtml(e.reponse_suggérée)}"\n`;
         }
         section += `\n`;
       });
@@ -262,13 +265,13 @@ export class ReportFormatter {
     if (agenda.conflits_detectes?.length > 0) {
       section += `⚠️ <b>Conflits détectés:</b>\n`;
       agenda.conflits_detectes.forEach(c => {
-        section += `• ${this.#escapeHtml(c)}\n`;
+        section += `• ${escapeHtml(c)}\n`;
       });
       section += '\n';
     }
 
     if (agenda.resume_semaine) {
-      section += `📋 ${this.#escapeHtml(agenda.resume_semaine)}\n\n`;
+      section += `📋 ${escapeHtml(agenda.resume_semaine)}\n\n`;
     }
 
     return section;
@@ -282,27 +285,14 @@ export class ReportFormatter {
     section += `└─────────────────────────────────┘\n\n`;
 
     insights.forEach(insight => {
-      section += `${insight.emoji || '💡'} <b>${this.#escapeHtml(insight.titre)}</b>\n`;
-      section += `   ${this.#escapeHtml(insight.detail)}\n`;
+      section += `${insight.emoji || '💡'} <b>${escapeHtml(insight.titre)}</b>\n`;
+      section += `   ${escapeHtml(insight.detail)}\n`;
       if (insight.recommandation) {
-        section += `   ➡️ ${this.#escapeHtml(insight.recommandation)}\n`;
+        section += `   ➡️ ${escapeHtml(insight.recommandation)}\n`;
       }
       section += `\n`;
     });
 
     return section;
-  }
-
-  /**
-   * Échappe les caractères HTML
-   * @param {string} text - Texte à échapper
-   * @returns {string}
-   */
-  static #escapeHtml(text) {
-    if (!text) return '';
-    return String(text)
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;');
   }
 }

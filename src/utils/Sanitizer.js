@@ -13,3 +13,18 @@ export function sanitizeMessageContent(content) {
 
   return cleaned;
 }
+
+/**
+ * Escapes HTML characters to prevent injection in Telegram messages
+ * @param {string} unsafe - The string to escape
+ * @returns {string} Escaped string
+ */
+export function escapeHtml(unsafe) {
+  if (unsafe == null) return '';
+  return String(unsafe)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}

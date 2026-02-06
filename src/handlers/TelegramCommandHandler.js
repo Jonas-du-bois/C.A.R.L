@@ -7,6 +7,8 @@
  * @module handlers/TelegramCommandHandler
  */
 
+import { escapeHtml } from '../utils/Sanitizer.js';
+
 // ============================================
 // CONSTANTES
 // ============================================
@@ -128,7 +130,7 @@ export class TelegramCommandHandler {
       const totalMessages = stats.received + stats.sent;
       
       const categoriesText = Object.keys(stats.byCategory).length > 0
-        ? Object.entries(stats.byCategory).map(([k, v]) => `• ${k}: ${v}`).join('\n')
+        ? Object.entries(stats.byCategory).map(([k, v]) => `• ${escapeHtml(k)}: ${v}`).join('\n')
         : '• Aucun message analysé';
 
       const report = 
@@ -263,8 +265,8 @@ export class TelegramCommandHandler {
 
             debug += 
               `${icon} ${i + 1}. ${direction} ${date.toLocaleString('fr-CH')}\n` +
-              `   De: ${phone}\n` +
-              `   Msg: "${bodyPreview}${truncated}"\n` +
+              `   De: ${escapeHtml(phone)}\n` +
+              `   Msg: "${escapeHtml(bodyPreview)}${truncated}"\n` +
               `   TS: ${m.received_at}\n\n`;
           });
         }
@@ -410,7 +412,7 @@ export class TelegramCommandHandler {
     let message = `📅 <b>CONFIRMER L'ÉVÉNEMENT</b>\n`;
     message += `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
     
-    message += `📌 <b>Titre:</b> ${eventData.summary}\n`;
+    message += `📌 <b>Titre:</b> ${escapeHtml(eventData.summary)}\n`;
     
     if (eventData.start) {
       const dateStr = eventData.start.toLocaleDateString('fr-CH', { 
@@ -436,7 +438,7 @@ export class TelegramCommandHandler {
       for (const c of eventData.conflicts) {
         const startStr = c.start.toLocaleTimeString('fr-CH', { hour: '2-digit', minute: '2-digit' });
         const endStr = c.end.toLocaleTimeString('fr-CH', { hour: '2-digit', minute: '2-digit' });
-        message += `   • ${c.summary} (${startStr} - ${endStr})\n`;
+        message += `   • ${escapeHtml(c.summary)} (${startStr} - ${endStr})\n`;
       }
       if (eventData.suggestion) {
         const suggestionStr = eventData.suggestion.toLocaleTimeString('fr-CH', { hour: '2-digit', minute: '2-digit' });
@@ -831,7 +833,7 @@ export class TelegramCommandHandler {
       
       this.#telegram.updatePendingEvent(eventId, pending);
       
-      await this.#telegram.sendMessage(`✅ Titre modifié: <b>${newTitle}</b>`);
+      await this.#telegram.sendMessage(`✅ Titre modifié: <b>${escapeHtml(newTitle)}</b>`);
       await this.#showEventConfirmation(eventId, pending.event);
     });
   }
@@ -861,8 +863,8 @@ export class TelegramCommandHandler {
       
       taches.forEach((t) => {
         const prioIcon = { haute: '🔴', moyenne: '🟡', basse: '🟢' }[t.priorite] || '⚪';
-        message += `${prioIcon} ${t.titre}\n`;
-        if (t.deadline) message += `   ⏰ ${t.deadline}\n`;
+        message += `${prioIcon} ${escapeHtml(t.titre)}\n`;
+        if (t.deadline) message += `   ⏰ ${escapeHtml(t.deadline)}\n`;
         message += '\n';
 
         buttons.push([{
@@ -878,8 +880,8 @@ export class TelegramCommandHandler {
       message += '📅 <b>ÉVÉNEMENTS PROPOSÉS:</b>\n';
       
       evenements.forEach((e) => {
-        message += `🗓️ ${e.activite} avec ${e.expediteur}\n`;
-        message += `   📍 ${e.quand}\n\n`;
+        message += `🗓️ ${escapeHtml(e.activite)} avec ${escapeHtml(e.expediteur)}\n`;
+        message += `   📍 ${escapeHtml(e.quand)}\n\n`;
 
         buttons.push([{
           text: `📅 ${e.activite} - ${e.quand}`.substring(0, 40),
@@ -1043,7 +1045,7 @@ export class TelegramCommandHandler {
         urgentConvs.slice(0, 3).forEach(c => {
           const lastMsg = c.messages?.[c.messages.length - 1];
           const preview = (lastMsg?.body || '').substring(0, 60);
-          brief += `• ${c.contactName}: "${preview}${preview.length >= 60 ? '...' : ''}"\n`;
+          brief += `• ${escapeHtml(c.contactName)}: "${escapeHtml(preview)}${preview.length >= 60 ? '...' : ''}"\n`;
         });
         brief += '\n';
       }
@@ -1054,8 +1056,8 @@ export class TelegramCommandHandler {
         const lastMsg = c.messages?.[c.messages.length - 1];
         const preview = (lastMsg?.body || '').substring(0, 40);
         const icon = lastMsg?.direction === 'outgoing' ? '↩️' : '💬';
-        brief += `${icon} <b>${c.contactName}</b> (${c.messages?.length || 0})\n`;
-        brief += `   └ "${preview}${preview.length >= 40 ? '...' : ''}"\n`;
+        brief += `${icon} <b>${escapeHtml(c.contactName)}</b> (${c.messages?.length || 0})\n`;
+        brief += `   └ "${escapeHtml(preview)}${preview.length >= 40 ? '...' : ''}"\n`;
       });
       brief += '\n';
     } else {
@@ -1072,7 +1074,7 @@ export class TelegramCommandHandler {
             const start = new Date(e.start?.dateTime || e.start?.date);
             const timeStr = start.toLocaleTimeString('fr-CH', { hour: '2-digit', minute: '2-digit' });
             const dayStr = start.toLocaleDateString('fr-CH', { weekday: 'short', day: 'numeric' });
-            brief += `• ${dayStr} ${timeStr} - ${e.summary}\n`;
+            brief += `• ${dayStr} ${timeStr} - ${escapeHtml(e.summary)}\n`;
           });
           brief += '\n';
         }
