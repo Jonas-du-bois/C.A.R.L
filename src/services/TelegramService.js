@@ -1,4 +1,5 @@
 import QRCode from 'qrcode';
+import { escapeHtml } from '../utils/Sanitizer.js';
 
 export class TelegramService {
   #botToken;
@@ -239,11 +240,11 @@ export class TelegramService {
       try {
         await handler(args, message);
       } catch (error) {
-        await this.sendMessage(`❌ Erreur: ${error.message}`);
+        await this.sendMessage(`❌ Erreur: ${escapeHtml(error.message)}`);
       }
     } else {
       await this.sendMessage(
-        `❓ Commande inconnue: /${command}\n\n` +
+        `❓ Commande inconnue: /${escapeHtml(command)}\n\n` +
         `<b>Commandes disponibles:</b>\n` +
         `/connect - 📱 Obtenir le QR code WhatsApp\n` +
         `/status - 🤖 État du système\n` +
