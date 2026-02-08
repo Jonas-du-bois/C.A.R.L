@@ -245,7 +245,11 @@ export class AIService {
         sentiment: parsed.sentiment || 'neutral',
         confidence: typeof parsed.confidence === 'number' 
           ? Math.min(1, Math.max(0, parsed.confidence)) : 0.5,
-        event_details: parsed.event_details || null
+        event_details: parsed.event_details ? {
+          summary: parsed.event_details.summary,
+          start: parsed.event_details.start,
+          duration: parsed.event_details.duration
+        } : null
       };
     } catch (error) {
       console.error('Failed to parse AI response:', text);

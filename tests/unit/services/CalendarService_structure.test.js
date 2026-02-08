@@ -35,7 +35,7 @@ test('CalendarService.createEvent', async (t) => {
 
     const result = await service.createEvent(eventData);
 
-    assert.strictEqual(result, 'Event created: http://calendar.google.com/event/123');
+    assert.strictEqual(result, 'Événement créé: http://calendar.google.com/event/123');
     assert.strictEqual(capturedResource.summary, 'Test Meeting');
     assert.strictEqual(capturedResource.start.dateTime, '2023-10-27T14:30:00.000Z');
 
@@ -62,7 +62,7 @@ test('CalendarService.createEvent', async (t) => {
 
     const result = await service.createEvent(input);
 
-    assert.strictEqual(result, 'Event created: http://calendar.google.com/event/456');
+    assert.strictEqual(result, 'Événement créé: http://calendar.google.com/event/456');
     assert.match(capturedResource.summary, /Meeting: Simple meeting request/);
     assert.strictEqual(capturedResource.description, input);
   });
