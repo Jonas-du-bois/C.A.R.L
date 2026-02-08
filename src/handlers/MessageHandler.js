@@ -40,6 +40,9 @@ export class MessageHandler {
         isGroup: messageMetadata.isGroup
       });
 
+      // ⚡ Bolt: Fetch context BEFORE saving current message to avoid duplication in AI context
+      const context = this.#repo.findRecent(rawMessage.from, 5);
+
       messageDbId = this.#repo.saveIncomingMessage(rawMessage, contact.id, {
         mediaType: messageMetadata.mediaType,
         mediaUrl: messageMetadata.mediaUrl,
@@ -55,15 +58,14 @@ export class MessageHandler {
       });
 
       // ============================================
-      // ÉTAPE 3: Simuler frappe humaine
+      // ÉTAPE 3 & 4: Traitement IA et Simulation de frappe EN PARALLÈLE
+      // ⚡ Bolt: Optimized to run typing simulation and AI analysis concurrently
       // ============================================
-      await this.#simulateTyping(rawMessage.from, rawMessage.body.length);
 
-      // ============================================
-      // ÉTAPE 4: Analyse IA avec contexte
-      // ============================================
-      const context = this.#repo.findRecent(rawMessage.from, 5);
-      const analysis = await this.#openAI.analyzeMessage(rawMessage, context);
+      const typingPromise = this.#simulateTyping(rawMessage.from, rawMessage.body.length);
+      const analysisPromise = this.#openAI.analyzeMessage(rawMessage, context);
+
+      const [_, analysis] = await Promise.all([typingPromise, analysisPromise]);
       const processingTime = Date.now() - startTime;
 
       // ============================================
