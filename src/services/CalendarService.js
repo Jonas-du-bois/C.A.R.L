@@ -604,12 +604,41 @@ export class CalendarService {
     }
   }
 
+  #validateEventInput(input) {
+    if (typeof input === 'string') {
+      if (input.length > 4096) {
+        throw new Error('Description de l\'événement trop longue (max 4096 caractères)');
+      }
+      return;
+    }
+
+    if (typeof input === 'object' && input !== null) {
+      if (input.summary && input.summary.length > 255) {
+        throw new Error('Titre de l\'événement trop long (max 255 caractères)');
+      }
+
+      if (input.description && input.description.length > 4096) {
+        throw new Error('Description de l\'événement trop longue (max 4096 caractères)');
+      }
+
+      if (input.calendarId) {
+        // Allow alphanumeric, @, ., _, -
+        // This covers standard Google Calendar IDs (email addresses and "primary")
+        if (!/^[a-zA-Z0-9@._-]+$/.test(input.calendarId)) {
+          throw new Error('ID de calendrier invalide');
+        }
+      }
+    }
+  }
+
   async createEvent(input) {
     if (!this.#calendar) {
       return 'Calendar integration disabled or not configured';
     }
 
     try {
+      this.#validateEventInput(input);
+
       let summary, start, end, description;
 
       if (typeof input === 'string') {
