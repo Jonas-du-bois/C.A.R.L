@@ -63,6 +63,7 @@ describe('MessageHandler Integration', () => {
         return id;
       },
       findRecent: function() { return []; },
+      findRecentByContactId: function() { return []; },
       saveAnalysis: function(msgId, analysis, meta = {}) {
         this.analyses.push({ message_id: msgId, ...analysis, ...meta });
       },

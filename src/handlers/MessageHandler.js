@@ -41,7 +41,7 @@ export class MessageHandler {
       });
 
       // ⚡ Bolt: Fetch context BEFORE saving current message to avoid duplication in AI context
-      const context = this.#repo.findRecent(rawMessage.from, 5);
+      const context = this.#repo.findRecentByContactId(contact.id, rawMessage.from, 5);
 
       messageDbId = this.#repo.saveIncomingMessage(rawMessage, contact.id, {
         mediaType: messageMetadata.mediaType,
