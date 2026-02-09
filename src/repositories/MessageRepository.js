@@ -186,6 +186,31 @@ export class MessageRepository {
     })).reverse();
   }
 
+  /**
+   * Récupère les messages récents par ID de contact (Optimisé pour éviter JOIN inutile)
+   * Utilise l'index idx_messages_contact_received(contact_id, received_at DESC)
+   */
+  findRecentByContactId(contactId, phoneNumber, limit = 10) {
+    const rows = this.#db.prepare(`
+      SELECT m.message_id as id, m.body, m.received_at as timestamp,
+             ma.urgency, ma.category
+      FROM messages m
+      LEFT JOIN message_analysis ma ON m.id = ma.message_id
+      WHERE m.contact_id = ?
+      ORDER BY m.received_at DESC
+      LIMIT ?
+    `).all(contactId, limit);
+
+    return rows.map(row => new Message({
+      id: row.id,
+      from: phoneNumber, // On passe le numéro directement puisqu'on le connaît déjà
+      body: row.body,
+      timestamp: row.timestamp,
+      urgency: row.urgency || 'low',
+      category: row.category || 'other'
+    })).reverse();
+  }
+
   getMessagesByContact(contactId, limit = 50, offset = 0) {
     return this.#db.prepare(`
       SELECT m.*, ma.intent, ma.urgency, ma.category, ma.sentiment, ma.confidence
