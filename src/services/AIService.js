@@ -988,6 +988,11 @@ RÈGLES FINALES IMPORTANTES:
           result = null;
       }
 
+      // Security: Sanitize AI output to prevent injection/DoS
+      if (result) {
+        result = this.#sanitizeReport(result);
+      }
+
       // Utiliser le total de messages calculé plus haut (totalMessages)
       // `messages` n'existe pas dans cette portée et provoquait une ReferenceError
       const formattedReport = this.#formatReport(result, stats, totalMessages);
@@ -1056,6 +1061,117 @@ RÈGLES FINALES IMPORTANTES:
 
     const data = await response.json();
     return JSON.parse(data.choices[0].message.content);
+  }
+
+  /**
+   * Validates and sanitizes the report structure to prevent massive payloads or injection
+   */
+  #sanitizeReport(data) {
+    if (!data || typeof data !== 'object') {
+      return {};
+    }
+
+    const sanitized = {};
+
+    // String fields
+    sanitized.salutation = this.#sanitizeString(data.salutation, 500);
+    sanitized.resume_situation = this.#sanitizeString(data.resume_situation, 2000);
+    sanitized.conclusion = this.#sanitizeString(data.conclusion, 1000);
+
+    // Statistics
+    sanitized.statistiques = {
+      par_categorie: this.#sanitizeStatsMap(data.statistiques?.par_categorie),
+      par_urgence: this.#sanitizeStatsMap(data.statistiques?.par_urgence),
+      temps_reponse_estime: this.#sanitizeString(data.statistiques?.temps_reponse_estime, 100)
+    };
+
+    // Actionable Messages
+    sanitized.messages_actionnables = (Array.isArray(data.messages_actionnables) ? data.messages_actionnables : [])
+      .slice(0, 10) // Limit number of items first to prevent DoS
+      .map(m => ({
+        expediteur: this.#sanitizeString(m.expediteur, 100),
+        message_original: this.#sanitizeString(m.message_original, 1000),
+        categorie: this.#sanitizeEnum(m.categorie, ['professionnel', 'personnel', 'sport_loisirs', 'benevolat', 'spam'], 'personnel'),
+        urgence: this.#sanitizeEnum(m.urgence, ['critique', 'haute', 'moyenne', 'basse'], 'basse'),
+        action_requise: this.#sanitizeString(m.action_requise, 500),
+        pourquoi: this.#sanitizeString(m.pourquoi, 500),
+        brouillon_reponse: this.#sanitizeString(m.brouillon_reponse, 2000)
+      }));
+
+    // Info Messages
+    sanitized.messages_info = (Array.isArray(data.messages_info) ? data.messages_info : [])
+      .slice(0, 10)
+      .map(m => ({
+        expediteur: this.#sanitizeString(m.expediteur, 100),
+        resume: this.#sanitizeString(m.resume, 500)
+      }));
+
+    // Tasks
+    sanitized.taches = (Array.isArray(data.taches) ? data.taches : [])
+      .slice(0, 10)
+      .map(t => ({
+        titre: this.#sanitizeString(t.titre, 200), // Calendar summary limit
+        description: this.#sanitizeString(t.description, 4000), // Calendar description limit
+        priorite: this.#sanitizeEnum(t.priorite, ['haute', 'moyenne', 'basse'], 'moyenne'),
+        deadline: this.#sanitizeString(t.deadline, 100),
+        source: this.#sanitizeString(t.source, 100)
+      }));
+
+    // Agenda
+    sanitized.agenda = {
+      evenements_proposes: (Array.isArray(data.agenda?.evenements_proposes) ? data.agenda.evenements_proposes : [])
+        .slice(0, 10)
+        .map(e => ({
+          expediteur: this.#sanitizeString(e.expediteur, 100),
+          activite: this.#sanitizeString(e.activite, 200),
+          quand: this.#sanitizeString(e.quand, 100),
+          duree_estimee: this.#sanitizeString(e.duree_estimee, 50),
+          disponibilite_jonas: this.#sanitizeString(e.disponibilite_jonas, 200),
+          creneaux_alternatifs: (Array.isArray(e.creneaux_alternatifs) ? e.creneaux_alternatifs : [])
+            .slice(0, 5)
+            .map(s => this.#sanitizeString(s, 100)),
+          reponse_suggérée: this.#sanitizeString(e.reponse_suggérée, 500)
+        })),
+      conflits_detectes: (Array.isArray(data.agenda?.conflits_detectes) ? data.agenda.conflits_detectes : [])
+        .slice(0, 5)
+        .map(c => this.#sanitizeString(c, 200)),
+      resume_semaine: this.#sanitizeString(data.agenda?.resume_semaine, 1000)
+    };
+
+    // Insights
+    sanitized.insights = (Array.isArray(data.insights) ? data.insights : [])
+      .slice(0, 5)
+      .map(i => ({
+        emoji: this.#sanitizeString(i.emoji, 10),
+        titre: this.#sanitizeString(i.titre, 100),
+        detail: this.#sanitizeString(i.detail, 500),
+        recommandation: this.#sanitizeString(i.recommandation, 500)
+      }));
+
+    return sanitized;
+  }
+
+  #sanitizeString(str, maxLength) {
+    if (typeof str !== 'string') return '';
+    return str.substring(0, maxLength).trim();
+  }
+
+  #sanitizeEnum(value, allowed, fallback) {
+    return allowed.includes(value) ? value : fallback;
+  }
+
+  #sanitizeStatsMap(map) {
+    if (!map || typeof map !== 'object') return {};
+    const sanitized = {};
+    for (const [key, val] of Object.entries(map)) {
+      if (typeof val === 'object' && val !== null) {
+        sanitized[key] = {
+          count: typeof val.count === 'number' ? val.count : 0,
+          percent: typeof val.percent === 'number' ? val.percent : 0
+        };
+      }
+    }
+    return sanitized;
   }
 
   /**
