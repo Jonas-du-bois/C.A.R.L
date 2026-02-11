@@ -549,6 +549,8 @@ export class CalendarService {
     }
 
     try {
+      this.#validateEventInput(input);
+
       const title = `📋 ${input.summary || 'Tâche'}`;
       const description = input.description || '';
       
