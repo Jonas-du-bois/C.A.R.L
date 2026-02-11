@@ -14,3 +14,7 @@
 ## 2026-02-10 - Deferring Non-Critical DB Writes
 **Learning:** Even fast synchronous DB operations like `saveAnalysis` (SQLite INSERT) block the event loop. When placed in the critical path before sending a network response (`sendMessage`), they add unnecessary latency to the user experience. By moving these operations *after* the response is sent, the perceived latency is reduced by the duration of the DB write plus any serialization overhead.
 **Action:** Audit request handlers to ensure that only operations strictly required to generate the response (e.g., AI analysis) occur before sending it. Move logging, analytics, and non-blocking side effects to execute after the response is sent.
+
+## 2026-02-12 - Read-Optimized UPSERT for Frequent Writes
+**Learning:** Using `INSERT ... ON CONFLICT DO UPDATE` unconditionally performs a write operation (and potentially triggers WAL checkpoints) even when the data hasn't changed. For high-frequency entities like `contacts` (accessed per message), this creates unnecessary I/O overhead.
+**Action:** Implemented a "Read-First" strategy: attempt to `SELECT` the record first. If it exists and matches metadata, skip the write entirely. Only perform the UPSERT when data actually changes or the record is missing. This significantly reduces unnecessary writes for stable contact data.

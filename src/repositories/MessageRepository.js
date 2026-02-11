@@ -17,16 +17,51 @@ export class MessageRepository {
   findOrCreateContact(phoneNumber, metadata = {}) {
     const now = Date.now();
     
-    // ⚡ Bolt: Optimized to single UPSERT query with RETURNING *
-    // This reduces DB roundtrips and handles concurrency better
+    // ⚡ Bolt: Optimized to avoid unnecessary writes
+    // First try to find the contact (Read is cheaper than Write)
+    const existing = this.getContactByPhone(phoneNumber);
+
+    if (existing) {
+      // Check if we need to update metadata
+      const updates = [];
+      const params = [];
+
+      if (metadata.pushName && existing.push_name !== metadata.pushName) {
+        updates.push('push_name = ?');
+        params.push(metadata.pushName);
+      }
+
+      if (metadata.displayName && existing.display_name !== metadata.displayName) {
+        updates.push('display_name = ?');
+        params.push(metadata.displayName);
+      }
+
+      // If we have metadata updates, perform them
+      if (updates.length > 0) {
+        updates.push('updated_at = ?');
+        params.push(now);
+        params.push(existing.id);
+
+        this.#db.prepare(`
+          UPDATE contacts SET ${updates.join(', ')} WHERE id = ?
+        `).run(...params);
+
+        // Return updated contact
+        return this.getContactById(existing.id);
+      }
+
+      // No updates needed, return existing contact
+      // Note: We don't update last_seen_at here to save a write.
+      // It will be updated in updateContactStats which is called when a message is actually saved.
+      return existing;
+    }
+
+    // Fallback to INSERT if not exists
+    // ⚡ Bolt: Use ON CONFLICT DO UPDATE to handle race conditions safely
     return this.#db.prepare(`
       INSERT INTO contacts (phone_number, push_name, display_name, is_group, first_seen_at, last_seen_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(phone_number) DO UPDATE SET
-        last_seen_at = excluded.last_seen_at,
-        push_name = COALESCE(excluded.push_name, contacts.push_name),
-        display_name = COALESCE(excluded.display_name, contacts.display_name),
-        updated_at = excluded.updated_at
+      ON CONFLICT(phone_number) DO UPDATE SET updated_at = updated_at
       RETURNING *
     `).get(
       phoneNumber,
@@ -49,9 +84,17 @@ export class MessageRepository {
 
   updateContactStats(contactId, direction) {
     const column = direction === 'incoming' ? 'total_messages_received' : 'total_messages_sent';
+    const now = Date.now();
+
+    // ⚡ Bolt: Update last_seen_at here to reduce write frequency in findOrCreateContact
+    // We update last_seen_at for both incoming and outgoing to track "last interaction"
     this.#db.prepare(`
-      UPDATE contacts SET ${column} = ${column} + 1, updated_at = ? WHERE id = ?
-    `).run(Date.now(), contactId);
+      UPDATE contacts
+      SET ${column} = ${column} + 1,
+          updated_at = ?,
+          last_seen_at = ?
+      WHERE id = ?
+    `).run(now, now, contactId);
   }
 
   blockContact(phoneNumber) {
