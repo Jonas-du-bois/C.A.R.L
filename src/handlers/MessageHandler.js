@@ -69,7 +69,18 @@ export class MessageHandler {
       const processingTime = Date.now() - startTime;
 
       // ============================================
-      // ÉTAPE 5: Sauvegarder l'analyse IA
+      // ÉTAPE 6: Gérer les actions
+      // ============================================
+      await this.#handleActions(analysis, rawMessage, messageDbId);
+
+      // ============================================
+      // ÉTAPE 7: Envoyer la réponse
+      // ============================================
+      const sentMessage = await this.#whatsapp.sendMessage(rawMessage.from, analysis.reply);
+
+      // ============================================
+      // ÉTAPE 5 (Moved): Sauvegarder l'analyse IA
+      // ⚡ Bolt: Moved after sendMessage to reduce perceived latency
       // ============================================
       this.#repo.saveAnalysis(messageDbId, {
         intent: analysis.intent,
@@ -86,16 +97,6 @@ export class MessageHandler {
         tokensUsed: analysis.tokensUsed
       });
 
-      // ============================================
-      // ÉTAPE 6: Gérer les actions
-      // ============================================
-      await this.#handleActions(analysis, rawMessage, messageDbId);
-
-      // ============================================
-      // ÉTAPE 7: Envoyer la réponse
-      // ============================================
-      const sentMessage = await this.#whatsapp.sendMessage(rawMessage.from, analysis.reply);
-      
       // Sauvegarder la réponse
       this.#repo.saveResponse(messageDbId, analysis.reply, 'auto');
 

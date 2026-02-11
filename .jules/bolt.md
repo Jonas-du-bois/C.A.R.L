@@ -10,3 +10,7 @@
 ## 2026-02-09 - Direct Key Lookup vs JOINs in High-Throughput Paths
 **Learning:** `MessageRepository.findRecent` used a JOIN with the `contacts` table to filter by phone number, even when the `contact_id` was already known in the calling context (`MessageHandler`). This added unnecessary overhead to the "hot path" of every incoming message.
 **Action:** Implemented `findRecentByContactId` to query the `messages` table directly using `contact_id`, leveraging the `idx_messages_contact_received` index without a JOIN. Benchmarks showed a ~3.3x speedup (~1.4ms to ~0.4ms) for context retrieval. Always prefer direct foreign key lookups over JOINs when the ID is available in the upper layer.
+
+## 2026-02-10 - Deferring Non-Critical DB Writes
+**Learning:** Even fast synchronous DB operations like `saveAnalysis` (SQLite INSERT) block the event loop. When placed in the critical path before sending a network response (`sendMessage`), they add unnecessary latency to the user experience. By moving these operations *after* the response is sent, the perceived latency is reduced by the duration of the DB write plus any serialization overhead.
+**Action:** Audit request handlers to ensure that only operations strictly required to generate the response (e.g., AI analysis) occur before sending it. Move logging, analytics, and non-blocking side effects to execute after the response is sent.
