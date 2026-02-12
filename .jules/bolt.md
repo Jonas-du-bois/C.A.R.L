@@ -14,3 +14,7 @@
 ## 2026-02-10 - Deferring Non-Critical DB Writes
 **Learning:** Even fast synchronous DB operations like `saveAnalysis` (SQLite INSERT) block the event loop. When placed in the critical path before sending a network response (`sendMessage`), they add unnecessary latency to the user experience. By moving these operations *after* the response is sent, the perceived latency is reduced by the duration of the DB write plus any serialization overhead.
 **Action:** Audit request handlers to ensure that only operations strictly required to generate the response (e.g., AI analysis) occur before sending it. Move logging, analytics, and non-blocking side effects to execute after the response is sent.
+
+## 2026-02-11 - Atomic Updates for Contact Stats
+**Learning:** The message processing pipeline was performing redundant writes to the `contacts` table: one UPSERT to update metadata (last seen) and a subsequent UPDATE to increment message stats. This caused two DB roundtrips and increased lock contention.
+**Action:** Modified `findOrCreateContact` to accept an option for atomic increment, merging the metadata update and stats increment into a single UPSERT query. This reduced the number of DB writes per message from 3 to 2 (1 for contact+stats, 1 for message).
