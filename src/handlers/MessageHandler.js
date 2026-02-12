@@ -38,7 +38,7 @@ export class MessageHandler {
         pushName: messageMetadata.pushName,
         displayName: messageMetadata.displayName,
         isGroup: messageMetadata.isGroup
-      });
+      }, { incrementReceived: true }); // ⚡ Bolt: Atomically increment stats
 
       // ⚡ Bolt: Fetch context BEFORE saving current message to avoid duplication in AI context
       const context = this.#repo.findRecentByContactId(contact.id, rawMessage.from, 5);
@@ -48,7 +48,8 @@ export class MessageHandler {
         mediaUrl: messageMetadata.mediaUrl,
         isForwarded: messageMetadata.isForwarded,
         isBroadcast: messageMetadata.isBroadcast,
-        quotedMessageId: messageMetadata.quotedMessageId
+        quotedMessageId: messageMetadata.quotedMessageId,
+        skipStatsUpdate: true // ⚡ Bolt: Stats already updated in findOrCreateContact
       });
 
       this.#logger.info('Message saved to database', {

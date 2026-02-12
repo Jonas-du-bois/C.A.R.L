@@ -13,20 +13,27 @@ export class MessageRepository {
 
   /**
    * Trouve ou crée un contact par numéro de téléphone
+   * @param {string} phoneNumber
+   * @param {Object} metadata
+   * @param {Object} options
+   * @param {boolean} options.incrementReceived - Whether to atomically increment total_messages_received
    */
-  findOrCreateContact(phoneNumber, metadata = {}) {
+  findOrCreateContact(phoneNumber, metadata = {}, options = {}) {
     const now = Date.now();
+    const increment = options.incrementReceived ? 1 : 0;
     
     // ⚡ Bolt: Optimized to single UPSERT query with RETURNING *
     // This reduces DB roundtrips and handles concurrency better
+    // Added atomic increment of total_messages_received to avoid extra UPDATE query
     return this.#db.prepare(`
-      INSERT INTO contacts (phone_number, push_name, display_name, is_group, first_seen_at, last_seen_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO contacts (phone_number, push_name, display_name, is_group, first_seen_at, last_seen_at, updated_at, total_messages_received)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(phone_number) DO UPDATE SET
         last_seen_at = excluded.last_seen_at,
         push_name = COALESCE(excluded.push_name, contacts.push_name),
         display_name = COALESCE(excluded.display_name, contacts.display_name),
-        updated_at = excluded.updated_at
+        updated_at = excluded.updated_at,
+        total_messages_received = contacts.total_messages_received + excluded.total_messages_received
       RETURNING *
     `).get(
       phoneNumber,
@@ -35,7 +42,8 @@ export class MessageRepository {
       metadata.isGroup ? 1 : 0,
       now,
       now,
-      now
+      now,
+      increment
     );
   }
 
@@ -89,8 +97,10 @@ export class MessageRepository {
       message.timestamp
     );
 
-    // Update contact stats
-    this.updateContactStats(contactId, 'incoming');
+    // Update contact stats (only if not skipped)
+    if (!metadata.skipStatsUpdate) {
+      this.updateContactStats(contactId, 'incoming');
+    }
 
     return result.lastInsertRowid;
   }
