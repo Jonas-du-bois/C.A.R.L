@@ -10,6 +10,9 @@ export class QueueService {
       interval: options.interval || 1000,
       intervalCap: options.intervalCap || 5
     });
+
+    // ⚡ Bolt: Auto-cleanup every 5 minutes to prevent memory leaks
+    setInterval(() => this.cleanup(), 5 * 60 * 1000).unref();
   }
 
   /**
@@ -26,10 +29,17 @@ export class QueueService {
   /**
    * Enqueue a task for a specific sender
    * Messages from the same sender are processed one at a time
+   *
+   * ⚡ Bolt Optimization:
+   * We nest the global queue INSIDE the sender queue.
+   * This ensures:
+   * 1. Sender tasks are sequential (senderQueue enforcement)
+   * 2. Waiting sender tasks DO NOT block global concurrency slots (key fix)
+   * 3. Global concurrency limit is respected for executing tasks only
    */
   async enqueue(senderId, task) {
     const senderQueue = this.#getSenderQueue(senderId);
-    return this.#globalQueue.add(() => senderQueue.add(task));
+    return senderQueue.add(() => this.#globalQueue.add(task));
   }
 
   /**
