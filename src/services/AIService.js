@@ -110,12 +110,14 @@ export class AIService {
 
   async analyzeMessage(message, context = []) {
     const contextText = context.slice(-3).map(m => 
-      `[${m.from === message.from ? 'User' : 'Assistant'}]: ${m.body}`
+      `[${m.from === message.from ? 'User' : 'Assistant'}]: ${this.#sanitizePromptInput(m.body)}`
     ).join('\n');
 
+    const sanitizedBody = this.#sanitizePromptInput(message.body);
+
     const userPrompt = contextText 
-      ? `Previous conversation:\n${contextText}\n\nNew message to analyze:\n"""\n${message.body}\n"""`
-      : `New message to analyze:\n"""\n${message.body}\n"""`;
+      ? `Previous conversation:\n${contextText}\n\nNew message to analyze:\n"""\n${sanitizedBody}\n"""`
+      : `New message to analyze:\n"""\n${sanitizedBody}\n"""`;
 
     switch (this.#provider) {
       case 'gemini':
@@ -216,6 +218,15 @@ export class AIService {
 
     const data = await response.json();
     return this.#parseResponse(data.choices[0].message.content);
+  }
+
+  /**
+   * Sanitize user input to prevent prompt injection via delimiter manipulation
+   * Replaces triple quotes with escaped quotes
+   */
+  #sanitizePromptInput(text) {
+    if (typeof text !== 'string') return '';
+    return text.replace(/"""/g, '\\"\\"\\"');
   }
 
   #parseResponse(text) {
@@ -385,7 +396,7 @@ Return a JSON object with a single "summary" field containing a concise French s
     const messagesText = conversations.flatMap(conv => 
       conv.messages.map(msg => {
         const time = new Date(msg.timestamp).toLocaleString('fr-CH');
-        return `[${time}] ${conv.contactName}: "${msg.body}"`;
+        return `[${time}] ${conv.contactName}: "${this.#sanitizePromptInput(msg.body)}"`;
       })
     ).join('\n');
 
@@ -582,9 +593,11 @@ IMPORTANT:
         const sender = msg.direction === 'incoming' ? conv.contactName : 'Jonas (toi)';
         
         // Tronquer les messages trop longs
-        const body = msg.body?.length > 300 
+        let body = msg.body?.length > 300
           ? msg.body.substring(0, 300) + '...' 
           : msg.body;
+
+        body = this.#sanitizePromptInput(body);
         
         return `  ${direction} [${time}] ${sender}: "${body}"`;
       }).join('\n');
