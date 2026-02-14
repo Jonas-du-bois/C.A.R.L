@@ -5,6 +5,11 @@ export class CalendarService {
   #config;
   #isConfigured = false;
 
+  // ⚡ Bolt: Cache calendar list to avoid frequent API calls
+  #calendarListCache = null;
+  #calendarListLastFetch = 0;
+  static CALENDAR_LIST_TTL = 3600000; // 1 hour
+
   constructor(config, calendarClient = null) {
     this.#config = config;
     if (calendarClient) {
@@ -39,14 +44,26 @@ export class CalendarService {
   async getCalendarList() {
     if (!this.#calendar) return [];
 
+    // ⚡ Bolt: Check cache first
+    const now = Date.now();
+    if (this.#calendarListCache && (now - this.#calendarListLastFetch < CalendarService.CALENDAR_LIST_TTL)) {
+      return this.#calendarListCache;
+    }
+
     try {
       const res = await this.#calendar.calendarList.list();
-      return (res.data.items || []).map(cal => ({
+      const list = (res.data.items || []).map(cal => ({
         id: cal.id,
         name: cal.summary,
         primary: cal.primary || false,
         accessRole: cal.accessRole
       }));
+
+      // Update cache
+      this.#calendarListCache = list;
+      this.#calendarListLastFetch = now;
+
+      return list;
     } catch (error) {
       console.error('Failed to fetch calendar list:', error.message);
       return [];
