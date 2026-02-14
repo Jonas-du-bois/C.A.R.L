@@ -1,3 +1,5 @@
+import { escapeHtml } from '../utils/Sanitizer.js';
+
 export class MessageHandler {
   #gatekeeper;
   #openAI;
@@ -194,7 +196,7 @@ export class MessageHandler {
       this.#repo.createAction(messageDbId, 'notify_admin', { from: rawMessage.from });
       
       await this.#telegram.sendMessage(
-        `🚨 Urgent message from ${rawMessage.from}:\n\n${rawMessage.body}`
+        `🚨 Urgent message from ${escapeHtml(rawMessage.from)}:\n\n${escapeHtml(rawMessage.body)}`
       );
       
       this.#repo.updateActionStatus(messageDbId, 'completed');
@@ -204,7 +206,7 @@ export class MessageHandler {
       this.#repo.createAction(messageDbId, 'critical_alert', { urgency: analysis.urgency });
       
       await this.#telegram.sendMessage(
-        `⚠️ Critical urgency detected from ${rawMessage.from}:\n\n${rawMessage.body}`
+        `⚠️ Critical urgency detected from ${escapeHtml(rawMessage.from)}:\n\n${escapeHtml(rawMessage.body)}`
       );
       
       this.#repo.updateActionStatus(messageDbId, 'completed');
