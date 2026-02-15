@@ -17,3 +17,8 @@
 **Vulnerability:** User input containing the delimiter `"""` could break out of the data block in `AIService` prompts, allowing instructions to be executed by the LLM (e.g., `""" Ignore previous instructions`).
 **Learning:** Delimiters alone are insufficient if the user input can contain the delimiter itself. User input must be sanitized to escape or neutralize the delimiter characters.
 **Prevention:** Implemented `#sanitizePromptInput` in `AIService` to escape all occurrences of `"""` in user input (messages and context) before injecting them into the prompt.
+
+## 2025-05-27 - Prompt Injection via Contact Name
+**Vulnerability:** Contact names (push names or display names) were interpolated directly into AI prompts in `AIService` methods like `extractEventsFromConversations` and `generateFullReport`. A malicious user could set their contact name to include `"""` or other delimiters to manipulate the prompt.
+**Learning:** All user-controlled input, including metadata like contact names, must be treated as untrusted and sanitized before being used in LLM prompts.
+**Prevention:** Sanitized `contactName` using `#sanitizePromptInput` in all occurrences within `AIService`.
