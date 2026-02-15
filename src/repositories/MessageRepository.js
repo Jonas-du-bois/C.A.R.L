@@ -513,7 +513,7 @@ export class MessageRepository {
       JOIN contacts c ON m.contact_id = c.id
       LEFT JOIN message_analysis ma ON m.id = ma.message_id
       WHERE m.received_at >= ?
-      ORDER BY c.phone_number, m.received_at ASC
+      ORDER BY m.received_at ASC
     `).all(since);
 
     // Grouper par contact
