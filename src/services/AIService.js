@@ -1220,12 +1220,12 @@ RÈGLES FINALES IMPORTANTES:
 
     // Salutation Jarvis
     if (aiResult?.salutation) {
-      report += `💬 <i>${aiResult.salutation}</i>\n\n`;
+      report += `💬 <i>${this.#escapeHtml(aiResult.salutation)}</i>\n\n`;
     }
 
     // Résumé de situation
     if (aiResult?.resume_situation) {
-      report += `${aiResult.resume_situation}\n\n`;
+      report += `${this.#escapeHtml(aiResult.resume_situation)}\n\n`;
     }
 
     // ═══════════════════════════════════════════════════════
@@ -1253,7 +1253,7 @@ RÈGLES FINALES IMPORTANTES:
     report += `🟢 Basse    : ${urgences.basse?.count || 0}\n\n`;
 
     if (aiResult?.statistiques?.temps_reponse_estime) {
-      report += `⏱️ <i>${aiResult.statistiques.temps_reponse_estime}</i>\n\n`;
+      report += `⏱️ <i>${this.#escapeHtml(aiResult.statistiques.temps_reponse_estime)}</i>\n\n`;
     }
 
     // ═══════════════════════════════════════════════════════
@@ -1412,7 +1412,7 @@ RÈGLES FINALES IMPORTANTES:
     // ═══════════════════════════════════════════════════════
     report += `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
     if (aiResult?.conclusion) {
-      report += `\n🎯 <i>${aiResult.conclusion}</i>\n`;
+      report += `\n🎯 <i>${this.#escapeHtml(aiResult.conclusion)}</i>\n`;
     }
 
     report += `\n<code>— C.A.R.L. v2.0 | Votre assistant personnel</code>`;
