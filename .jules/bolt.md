@@ -22,3 +22,7 @@
 ## 2026-03-01 - Optimizing Queue Throughput with Nested Queues
 **Learning:** The previous `QueueService` implementation used `globalQueue.add(() => senderQueue.add(task))`. This caused a severe "Head-of-Line Blocking" issue where a single sender with many sequential tasks would monopolize global concurrency slots. The global queue saw the *wrapper* tasks as active, even though the inner `senderQueue` was blocking them.
 **Action:** Inverted the queue nesting to `senderQueue.add(() => globalQueue.add(task))`. This ensures that only tasks *actually ready to execute* enter the global queue. Benchmark showed a ~6.6x latency reduction (113ms -> 17ms) for other users during congestion. Always verify that rate-limiting or serialization logic doesn't inadvertently consume shared resources while waiting.
+
+## 2026-03-02 - Caching Static API Responses
+**Learning:** The `CalendarService.getCalendarList` method was called redundantly by `getUpcomingEvents`, `checkConflicts`, and `getAgendaSummary`. In `getAgendaSummary` alone, this resulted in 3 separate API calls to fetch the same static list of calendars within milliseconds.
+**Action:** Implemented a 1-hour in-memory cache for `getCalendarList`. This eliminates redundant API calls during complex operations like report generation or conflict checking, reducing latency and quota usage. Always consider caching for external API calls that return static or slowly-changing data.
