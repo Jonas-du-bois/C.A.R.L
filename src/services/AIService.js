@@ -396,7 +396,7 @@ Return a JSON object with a single "summary" field containing a concise French s
     const messagesText = conversations.flatMap(conv => 
       conv.messages.map(msg => {
         const time = new Date(msg.timestamp).toLocaleString('fr-CH');
-        return `[${time}] ${conv.contactName}: "${this.#sanitizePromptInput(msg.body)}"`;
+        return `[${time}] ${this.#sanitizePromptInput(conv.contactName)}: "${this.#sanitizePromptInput(msg.body)}"`;
       })
     ).join('\n');
 
@@ -590,7 +590,7 @@ IMPORTANT:
         });
         
         const direction = msg.direction === 'incoming' ? '→' : '←';
-        const sender = msg.direction === 'incoming' ? conv.contactName : 'Jonas (toi)';
+        const sender = msg.direction === 'incoming' ? this.#sanitizePromptInput(conv.contactName) : 'Jonas (toi)';
         
         // Tronquer les messages trop longs
         let body = msg.body?.length > 300
@@ -613,7 +613,7 @@ IMPORTANT:
 
       return `
 ┌─────────────────────────────────────────────────────────────────────
-│ CONVERSATION #${index + 1}: ${conv.contactName}
+│ CONVERSATION #${index + 1}: ${this.#sanitizePromptInput(conv.contactName)}
 │ Messages: ${conv.stats.incoming} reçus, ${conv.stats.outgoing} réponses
 │ Catégorie détectée: ${dominantCategory} | Urgence max: ${maxUrgency}
 ├─────────────────────────────────────────────────────────────────────
@@ -630,20 +630,20 @@ ${messagesFormatted}
   async #preprocessLargeConversation(conv) {
     const messagesText = conv.messages.map(msg => {
       const direction = msg.direction === 'incoming' ? '→' : '←';
-      const sender = msg.direction === 'incoming' ? conv.contactName : 'Jonas';
+      const sender = msg.direction === 'incoming' ? this.#sanitizePromptInput(conv.contactName) : 'Jonas';
       return `${direction} ${sender}: "${msg.body}"`;
     }).join('\n');
 
     const prompt = `Analyse cette conversation et génère un JSON résumé:
 
-CONVERSATION AVEC: ${conv.contactName}
+CONVERSATION AVEC: ${this.#sanitizePromptInput(conv.contactName)}
 Messages: ${conv.stats.incoming} reçus, ${conv.stats.outgoing} envoyés
 
 ${messagesText}
 
 Génère un JSON avec:
 {
-  "contact": "${conv.contactName}",
+  "contact": "${this.#sanitizePromptInput(conv.contactName)}",
   "resume": "Résumé en 2-3 phrases du contenu de la conversation",
   "categorie": "professionnel/personnel/sport_loisirs/benevolat/spam",
   "urgence": "critique/haute/moyenne/basse",
@@ -802,7 +802,7 @@ Génère un JSON avec:
     
     // Stats par contact pour le contexte
     const contactSummary = conversations.slice(0, 10).map(c => 
-      `• ${c.contactName}: ${c.stats.incoming} reçus, ${c.stats.outgoing} envoyés`
+      `• ${this.#sanitizePromptInput(c.contactName)}: ${c.stats.incoming} reçus, ${c.stats.outgoing} envoyés`
     ).join('\n');
 
     // Préparer les infos agenda
@@ -839,7 +839,7 @@ RÉSUMÉS DES CONVERSATIONS IMPORTANTES (pré-analysées)
 ═══════════════════════════════════════════════════════════════════════
 
 ${preprocessedSummaries.map((summary, i) => `
-📌 CONVERSATION ${i + 1}: ${summary.contact}
+📌 CONVERSATION ${i + 1}: ${this.#sanitizePromptInput(summary.contact)}
    Résumé: ${summary.resume}
    Catégorie: ${summary.categorie} | Urgence: ${summary.urgence}
    ${summary.actions_requises?.length ? `Actions: ${summary.actions_requises.join(', ')}` : ''}
