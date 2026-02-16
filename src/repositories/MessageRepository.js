@@ -495,6 +495,8 @@ export class MessageRepository {
     const since = this.#getMidnightTimestamp();
     
     // Récupérer tous les messages (entrants ET sortants) de la journée
+    // ⚡ Bolt: Optimized query to sort only by received_at (indexed) to avoid expensive file sort
+    // Grouping by contact is handled in application logic
     const allMessages = this.#db.prepare(`
       SELECT 
         m.id,
@@ -513,7 +515,7 @@ export class MessageRepository {
       JOIN contacts c ON m.contact_id = c.id
       LEFT JOIN message_analysis ma ON m.id = ma.message_id
       WHERE m.received_at >= ?
-      ORDER BY c.phone_number, m.received_at ASC
+      ORDER BY m.received_at ASC
     `).all(since);
 
     // Grouper par contact

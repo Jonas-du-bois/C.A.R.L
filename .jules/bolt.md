@@ -22,3 +22,7 @@
 ## 2026-03-01 - Optimizing Queue Throughput with Nested Queues
 **Learning:** The previous `QueueService` implementation used `globalQueue.add(() => senderQueue.add(task))`. This caused a severe "Head-of-Line Blocking" issue where a single sender with many sequential tasks would monopolize global concurrency slots. The global queue saw the *wrapper* tasks as active, even though the inner `senderQueue` was blocking them.
 **Action:** Inverted the queue nesting to `senderQueue.add(() => globalQueue.add(task))`. This ensures that only tasks *actually ready to execute* enter the global queue. Benchmark showed a ~6.6x latency reduction (113ms -> 17ms) for other users during congestion. Always verify that rate-limiting or serialization logic doesn't inadvertently consume shared resources while waiting.
+
+## 2026-03-01 - Avoid JOINs for Sorting in Reporting Queries
+**Learning:** `MessageRepository.getConversationsForReport` was sorting by `contacts.phone_number` first, then `messages.received_at`. This forced SQLite to perform a join and file sort even though the application logic was already grouping messages by contact. By removing the sort on `phone_number` and relying on `messages.received_at` (indexed), the query avoids the expensive sort operation while still providing the necessary chronological order for correct grouping.
+**Action:** When grouping data in application code, avoid sorting by grouping keys in SQL if the global order of groups is not strict or can be handled in memory, especially if it prevents index usage for the inner items.
