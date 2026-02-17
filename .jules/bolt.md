@@ -26,3 +26,7 @@
 ## 2026-03-01 - Avoid JOINs for Sorting in Reporting Queries
 **Learning:** `MessageRepository.getConversationsForReport` was sorting by `contacts.phone_number` first, then `messages.received_at`. This forced SQLite to perform a join and file sort even though the application logic was already grouping messages by contact. By removing the sort on `phone_number` and relying on `messages.received_at` (indexed), the query avoids the expensive sort operation while still providing the necessary chronological order for correct grouping.
 **Action:** When grouping data in application code, avoid sorting by grouping keys in SQL if the global order of groups is not strict or can be handled in memory, especially if it prevents index usage for the inner items.
+
+## 2026-03-02 - Caching External API Calls for Frequent Schedule Lookups
+**Learning:** `CalendarService.getUpcomingEvents` was calling the Google Calendar API on every request, even for subsequent checks within the same conversation session. This caused significant latency and redundant API usage. By implementing a short-lived (5-minute) cache with a default fetch range (14 days), multiple queries (e.g., availability check -> slot proposal -> conflict check) can be served from memory.
+**Action:** Implement `eventsCache` in `CalendarService` with invalidation on write operations (`createEvent`, `createTask`). This reduces N API calls to 1 per 5 minutes for schedule-related queries, improving response time and reducing quota usage.

@@ -10,6 +10,11 @@ export class CalendarService {
   #calendarListLastFetch = 0;
   static CALENDAR_LIST_TTL = 3600000; // 1 hour
 
+  // ⚡ Bolt: Cache upcoming events to reduce API calls
+  #eventsCache = null; // { items: [], timestamp: 0, rangeDays: 0 }
+  static EVENTS_CACHE_TTL = 300000; // 5 minutes
+  static CACHE_DAYS = 14; // Default fetch range for caching
+
   constructor(config, calendarClient = null) {
     this.#config = config;
     if (calendarClient) {
@@ -78,10 +83,27 @@ export class CalendarService {
   async getUpcomingEvents(daysAhead = 7) {
     if (!this.#calendar) return [];
 
+    const now = Date.now();
+    const rangeDays = Math.max(daysAhead, CalendarService.CACHE_DAYS);
+
+    // ⚡ Bolt: Check event cache first
+    if (this.#eventsCache &&
+        (now - this.#eventsCache.timestamp < CalendarService.EVENTS_CACHE_TTL) &&
+        daysAhead <= this.#eventsCache.rangeDays) {
+
+      const cutoff = new Date();
+      cutoff.setDate(cutoff.getDate() + daysAhead);
+
+      return this.#eventsCache.items.filter(e => {
+        const start = new Date(e.start.dateTime || e.start.date);
+        return start <= cutoff;
+      });
+    }
+
     try {
-      const now = new Date();
+      const startDate = new Date();
       const future = new Date();
-      future.setDate(future.getDate() + daysAhead);
+      future.setDate(future.getDate() + rangeDays);
 
       // Récupérer la liste de tous les calendriers
       const calendars = await this.getCalendarList();
@@ -90,12 +112,24 @@ export class CalendarService {
         // Fallback: utiliser le calendrier configuré
         const res = await this.#calendar.events.list({
           calendarId: this.#config.google.calendarId,
-          timeMin: now.toISOString(),
+          timeMin: startDate.toISOString(),
           timeMax: future.toISOString(),
           singleEvents: true,
           orderBy: 'startTime',
         });
-        return res.data.items || [];
+        const items = res.data.items || [];
+
+        // Update cache
+        this.#eventsCache = {
+          items,
+          timestamp: now,
+          rangeDays
+        };
+
+        // Filter for return
+        const cutoff = new Date();
+        cutoff.setDate(cutoff.getDate() + daysAhead);
+        return items.filter(e => new Date(e.start.dateTime || e.start.date) <= cutoff);
       }
 
       // Récupérer les événements de chaque calendrier en parallèle
@@ -103,7 +137,7 @@ export class CalendarService {
         try {
           const res = await this.#calendar.events.list({
             calendarId: cal.id,
-            timeMin: now.toISOString(),
+            timeMin: startDate.toISOString(),
             timeMax: future.toISOString(),
             singleEvents: true,
             orderBy: 'startTime',
@@ -130,7 +164,17 @@ export class CalendarService {
         return aStart - bStart;
       });
 
-      return allEvents;
+      // Update cache
+      this.#eventsCache = {
+        items: allEvents,
+        timestamp: now,
+        rangeDays
+      };
+
+      // Filter for return
+      const cutoff = new Date();
+      cutoff.setDate(cutoff.getDate() + daysAhead);
+      return allEvents.filter(e => new Date(e.start.dateTime || e.start.date) <= cutoff);
     } catch (error) {
       console.error('Failed to fetch calendar events:', error.message);
       return [];
@@ -158,58 +202,76 @@ export class CalendarService {
       const dayEnd = new Date(startTime);
       dayEnd.setHours(23, 59, 59, 999);
 
-      // Récupérer tous les calendriers
-      let calendars = await this.getCalendarList();
+      let dayEvents = [];
+
+      // ⚡ Bolt: Try to use cache first if applicable
+      const now = Date.now();
+      const daysUntilStart = (startTime - now) / (1000 * 60 * 60 * 24);
       
-      // Si aucun calendrier trouvé via l'API, utiliser le calendrier par défaut
-      if (calendars.length === 0 && this.#config.google?.calendarId) {
-        calendars = [{
-          id: this.#config.google.calendarId,
-          name: 'Calendrier principal'
-        }];
-      }
-      
-      // S'assurer que le calendrier par défaut est inclus (évite les doublons)
-      const defaultCalId = this.#config.google?.calendarId;
-      if (defaultCalId && !calendars.some(c => c.id === defaultCalId)) {
-        calendars.push({
-          id: defaultCalId,
-          name: 'Calendrier principal'
+      if (this.#eventsCache &&
+          (now - this.#eventsCache.timestamp < CalendarService.EVENTS_CACHE_TTL) &&
+          daysUntilStart <= this.#eventsCache.rangeDays &&
+          daysUntilStart >= -1) { // Include recent past (yesterday) just in case
+
+        dayEvents = this.#eventsCache.items.filter(e => {
+           const eStart = new Date(e.start.dateTime || e.start.date);
+           return eStart >= dayStart && eStart <= dayEnd;
+        });
+      } else {
+        // Fallback to fetch logic
+        // Récupérer tous les calendriers
+        let calendars = await this.getCalendarList();
+
+        // Si aucun calendrier trouvé via l'API, utiliser le calendrier par défaut
+        if (calendars.length === 0 && this.#config.google?.calendarId) {
+          calendars = [{
+            id: this.#config.google.calendarId,
+            name: 'Calendrier principal'
+          }];
+        }
+
+        // S'assurer que le calendrier par défaut est inclus (évite les doublons)
+        const defaultCalId = this.#config.google?.calendarId;
+        if (defaultCalId && !calendars.some(c => c.id === defaultCalId)) {
+          calendars.push({
+            id: defaultCalId,
+            name: 'Calendrier principal'
+          });
+        }
+
+        if (calendars.length === 0) {
+          console.warn('[CalendarService] No calendars available for conflict check');
+          return { hasConflict: false, conflicts: [], suggestion: null };
+        }
+
+        console.log(`[CalendarService] Checking conflicts across ${calendars.length} calendar(s)`);
+
+        // Récupérer les événements de chaque calendrier pour ce jour
+        const allEventsPromises = calendars.map(async (cal) => {
+          try {
+            const res = await this.#calendar.events.list({
+              calendarId: cal.id,
+              timeMin: dayStart.toISOString(),
+              timeMax: dayEnd.toISOString(),
+              singleEvents: true,
+              orderBy: 'startTime',
+            });
+            return (res.data.items || []).map(event => ({
+              ...event,
+              calendarName: cal.name
+            }));
+          } catch (error) {
+            return [];
+          }
+        });
+
+        const allEventsArrays = await Promise.all(allEventsPromises);
+        dayEvents = allEventsArrays.flat().sort((a, b) => {
+          const aStart = new Date(a.start?.dateTime || a.start?.date);
+          const bStart = new Date(b.start?.dateTime || b.start?.date);
+          return aStart - bStart;
         });
       }
-
-      if (calendars.length === 0) {
-        console.warn('[CalendarService] No calendars available for conflict check');
-        return { hasConflict: false, conflicts: [], suggestion: null };
-      }
-      
-      console.log(`[CalendarService] Checking conflicts across ${calendars.length} calendar(s)`);
-
-      // Récupérer les événements de chaque calendrier pour ce jour
-      const allEventsPromises = calendars.map(async (cal) => {
-        try {
-          const res = await this.#calendar.events.list({
-            calendarId: cal.id,
-            timeMin: dayStart.toISOString(),
-            timeMax: dayEnd.toISOString(),
-            singleEvents: true,
-            orderBy: 'startTime',
-          });
-          return (res.data.items || []).map(event => ({
-            ...event,
-            calendarName: cal.name
-          }));
-        } catch (error) {
-          return [];
-        }
-      });
-
-      const allEventsArrays = await Promise.all(allEventsPromises);
-      const dayEvents = allEventsArrays.flat().sort((a, b) => {
-        const aStart = new Date(a.start?.dateTime || a.start?.date);
-        const bStart = new Date(b.start?.dateTime || b.start?.date);
-        return aStart - bStart;
-      });
 
       // Chercher les conflits
       const conflicts = [];
@@ -607,6 +669,9 @@ export class CalendarService {
         resource: event,
       });
 
+      // ⚡ Bolt: Invalidate event cache
+      this.#eventsCache = null;
+
       // Formater la date pour l'affichage
       const displayDate = dueDate.toLocaleDateString('fr-CH', {
         weekday: 'long',
@@ -712,6 +777,9 @@ export class CalendarService {
         calendarId: targetCalendarId,
         resource: event,
       });
+
+      // ⚡ Bolt: Invalidate event cache
+      this.#eventsCache = null;
 
       return `Événement créé: ${res.data.htmlLink}`;
     } catch (error) {
