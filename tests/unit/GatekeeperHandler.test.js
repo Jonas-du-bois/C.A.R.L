@@ -66,4 +66,77 @@ describe('GatekeeperHandler', () => {
       assert.strictEqual(gatekeeper.shouldProcess(message), false, 'Message 6 should be blocked');
     });
   });
+
+  describe('cleanup', () => {
+    it('should remove users with no recent messages', () => {
+      let currentTime = 1000000;
+      const mockNow = () => currentTime;
+
+      const handler = new GatekeeperHandler({ now: mockNow });
+      const user1 = { from: 'user1@s.whatsapp.net' };
+
+      // User sends a message
+      handler.shouldProcess(user1);
+      assert.strictEqual(handler.getStats().userCount, 1);
+
+      // Advance time by 61 seconds
+      currentTime += 61000;
+
+      // Run cleanup
+      handler.cleanup();
+
+      // User should be removed
+      assert.strictEqual(handler.getStats().userCount, 0);
+    });
+
+    it('should keep users with recent messages', () => {
+      let currentTime = 1000000;
+      const mockNow = () => currentTime;
+
+      const handler = new GatekeeperHandler({ now: mockNow });
+      const user1 = { from: 'user1@s.whatsapp.net' };
+
+      // User sends a message
+      handler.shouldProcess(user1);
+
+      // Advance time by 30 seconds
+      currentTime += 30000;
+
+      // Run cleanup
+      handler.cleanup();
+
+      // User should still be there
+      assert.strictEqual(handler.getStats().userCount, 1);
+    });
+
+    it('should partially clean up old timestamps for active users', () => {
+      let currentTime = 1000000;
+      const mockNow = () => currentTime;
+
+      const handler = new GatekeeperHandler({ now: mockNow });
+      const user1 = { from: 'user1@s.whatsapp.net' };
+
+      // Message 1 at T=0
+      handler.shouldProcess(user1);
+
+      // Message 2 at T=30s
+      currentTime += 30000;
+      handler.shouldProcess(user1);
+
+      // Advance time to T=70s (Message 1 is old, Message 2 is recent)
+      currentTime = 1000000 + 70000;
+
+      // Run cleanup
+      handler.cleanup();
+
+      // User should still be there (Message 2 is recent)
+      assert.strictEqual(handler.getStats().userCount, 1);
+
+      // Advance to T=95s (Message 2 is now also old: 95s - 30s = 65s age)
+      currentTime = 1000000 + 95000;
+
+      handler.cleanup();
+      assert.strictEqual(handler.getStats().userCount, 0);
+    });
+  });
 });
