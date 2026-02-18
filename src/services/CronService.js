@@ -67,7 +67,8 @@ export class CronService {
     const stats = this.#repo.getQuickStats();
     
     // Récupérer les conversations groupées par contact (nouveau format)
-    const conversations = this.#repo.getConversationsForReport();
+    // ⚡ Bolt: Limit to 15 top contacts to match AI service limit and optimize DB fetch
+    const conversations = this.#repo.getConversationsForReport(20, 15);
     
     // Garder aussi les messages plats pour compatibilité
     const messages = this.#repo.getMessagesForReport();

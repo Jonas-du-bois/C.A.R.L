@@ -491,32 +491,73 @@ export class MessageRepository {
    * @param {number} maxMessagesPerContact - Limite de messages par contact (défaut: 20)
    * @returns {Object} Conversations groupées par contact avec métadonnées
    */
-  getConversationsForReport(maxMessagesPerContact = 20) {
+  getConversationsForReport(maxMessagesPerContact = 20, limitContacts = null) {
     const since = this.#getMidnightTimestamp();
+    let allMessages;
     
-    // Récupérer tous les messages (entrants ET sortants) de la journée
-    // ⚡ Bolt: Optimized query to sort only by received_at (indexed) to avoid expensive file sort
-    // Grouping by contact is handled in application logic
-    const allMessages = this.#db.prepare(`
-      SELECT 
-        m.id,
-        m.body,
-        m.direction,
-        m.received_at,
-        m.contact_id,
-        c.phone_number,
-        c.push_name,
-        c.display_name,
-        ma.intent,
-        ma.urgency,
-        ma.category,
-        ma.sentiment
-      FROM messages m
-      JOIN contacts c ON m.contact_id = c.id
-      LEFT JOIN message_analysis ma ON m.id = ma.message_id
-      WHERE m.received_at >= ?
-      ORDER BY m.received_at ASC
-    `).all(since);
+    if (limitContacts) {
+      // ⚡ Bolt: Two-step optimization to avoid fetching bodies for inactive contacts
+      // 1. Identify top N most active contacts (by message count)
+      const topContacts = this.#db.prepare(`
+        SELECT contact_id, COUNT(*) as count
+        FROM messages
+        WHERE received_at >= ?
+        GROUP BY contact_id
+        ORDER BY count DESC
+        LIMIT ?
+      `).all(since, limitContacts);
+
+      if (topContacts.length === 0) {
+        return [];
+      }
+
+      const contactIds = topContacts.map(r => r.contact_id);
+      const placeholders = contactIds.map(() => '?').join(',');
+
+      // 2. Fetch full message details ONLY for these top N contacts
+      allMessages = this.#db.prepare(`
+        SELECT
+          m.id,
+          m.body,
+          m.direction,
+          m.received_at,
+          m.contact_id,
+          c.phone_number,
+          c.push_name,
+          c.display_name,
+          ma.intent,
+          ma.urgency,
+          ma.category,
+          ma.sentiment
+        FROM messages m
+        JOIN contacts c ON m.contact_id = c.id
+        LEFT JOIN message_analysis ma ON m.id = ma.message_id
+        WHERE m.contact_id IN (${placeholders}) AND m.received_at >= ?
+        ORDER BY m.received_at ASC
+      `).all(...contactIds, since);
+    } else {
+      // Original behavior: Fetch all active conversations
+      allMessages = this.#db.prepare(`
+        SELECT
+          m.id,
+          m.body,
+          m.direction,
+          m.received_at,
+          m.contact_id,
+          c.phone_number,
+          c.push_name,
+          c.display_name,
+          ma.intent,
+          ma.urgency,
+          ma.category,
+          ma.sentiment
+        FROM messages m
+        JOIN contacts c ON m.contact_id = c.id
+        LEFT JOIN message_analysis ma ON m.id = ma.message_id
+        WHERE m.received_at >= ?
+        ORDER BY m.received_at ASC
+      `).all(since);
+    }
 
     // Grouper par contact
     const conversations = {};

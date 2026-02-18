@@ -1014,7 +1014,8 @@ export class TelegramCommandHandler {
    */
   async #generateBriefReport() {
     const stats = this.#messageRepo.getQuickStats();
-    const conversations = this.#messageRepo.getConversationsForReport(5) || [];
+    // ⚡ Bolt: Limit to top 5 contacts for brief report optimization
+    const conversations = this.#messageRepo.getConversationsForReport(5, 5) || [];
     const calendarService = this.#cronService.getCalendarService();
     
     const now = new Date().toLocaleDateString('fr-CH', { 
