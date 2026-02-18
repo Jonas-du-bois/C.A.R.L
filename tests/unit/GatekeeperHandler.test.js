@@ -11,12 +11,12 @@ describe('GatekeeperHandler', () => {
 
   describe('shouldProcess', () => {
     it('should allow first message from a sender', () => {
-      const message = { from: 'user1@s.whatsapp.net' };
+      const message = { from: 'user1@s.whatsapp.net', body: 'hello' };
       assert.strictEqual(gatekeeper.shouldProcess(message), true);
     });
 
     it('should allow messages with 2+ seconds between them', async () => {
-      const message = { from: 'user1@s.whatsapp.net' };
+      const message = { from: 'user1@s.whatsapp.net', body: 'hello' };
       
       assert.strictEqual(gatekeeper.shouldProcess(message), true);
       
@@ -27,7 +27,7 @@ describe('GatekeeperHandler', () => {
     });
 
     it('should block messages sent within 2 seconds', () => {
-      const message = { from: 'user1@s.whatsapp.net' };
+      const message = { from: 'user1@s.whatsapp.net', body: 'hello' };
       
       gatekeeper.shouldProcess(message);
       // Immediate second message should be blocked
@@ -35,8 +35,8 @@ describe('GatekeeperHandler', () => {
     });
 
     it('should track different users separately', () => {
-      const user1 = { from: 'user1@s.whatsapp.net' };
-      const user2 = { from: 'user2@s.whatsapp.net' };
+      const user1 = { from: 'user1@s.whatsapp.net', body: 'hello' };
+      const user2 = { from: 'user2@s.whatsapp.net', body: 'hi' };
       
       // First message from each user should be allowed
       assert.strictEqual(gatekeeper.shouldProcess(user1), true);
@@ -48,7 +48,7 @@ describe('GatekeeperHandler', () => {
     });
 
     it('should block when rate limit of 5 messages per minute is exceeded', async () => {
-      const message = { from: 'user1@s.whatsapp.net' };
+      const message = { from: 'user1@s.whatsapp.net', body: 'hello' };
       
       // Simulate 5 allowed messages with proper spacing
       for (let i = 0; i < 5; i++) {
@@ -65,6 +65,20 @@ describe('GatekeeperHandler', () => {
       // 6th message should be blocked due to rate limit
       assert.strictEqual(gatekeeper.shouldProcess(message), false, 'Message 6 should be blocked');
     });
+
+    it('should block messages exceeding max length', () => {
+      const longBody = 'a'.repeat(4097);
+      const message = { from: 'user1@s.whatsapp.net', body: longBody };
+
+      assert.strictEqual(gatekeeper.shouldProcess(message), false, 'Message exceeding max length should be blocked');
+    });
+
+    it('should allow messages within max length', () => {
+      const maxBody = 'a'.repeat(4096);
+      const message = { from: 'user1@s.whatsapp.net', body: maxBody };
+
+      assert.strictEqual(gatekeeper.shouldProcess(message), true, 'Message within max length should be allowed');
+    });
   });
 
   describe('cleanup', () => {
@@ -73,7 +87,7 @@ describe('GatekeeperHandler', () => {
       const mockNow = () => currentTime;
 
       const handler = new GatekeeperHandler({ now: mockNow });
-      const user1 = { from: 'user1@s.whatsapp.net' };
+      const user1 = { from: 'user1@s.whatsapp.net', body: 'hello' };
 
       // User sends a message
       handler.shouldProcess(user1);
@@ -94,7 +108,7 @@ describe('GatekeeperHandler', () => {
       const mockNow = () => currentTime;
 
       const handler = new GatekeeperHandler({ now: mockNow });
-      const user1 = { from: 'user1@s.whatsapp.net' };
+      const user1 = { from: 'user1@s.whatsapp.net', body: 'hello' };
 
       // User sends a message
       handler.shouldProcess(user1);
@@ -114,7 +128,7 @@ describe('GatekeeperHandler', () => {
       const mockNow = () => currentTime;
 
       const handler = new GatekeeperHandler({ now: mockNow });
-      const user1 = { from: 'user1@s.whatsapp.net' };
+      const user1 = { from: 'user1@s.whatsapp.net', body: 'hello' };
 
       // Message 1 at T=0
       handler.shouldProcess(user1);
