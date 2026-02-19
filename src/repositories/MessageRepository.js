@@ -455,35 +455,6 @@ export class MessageRepository {
     return midnight.getTime();
   }
 
-  /**
-   * Récupère tous les messages de la journée en cours pour le rapport
-   * Optimisé pour envoyer une seule requête à l'IA
-   */
-  getMessagesForReport() {
-    const since = this.#getMidnightTimestamp();
-    
-    return this.#db.prepare(`
-      SELECT 
-        m.id,
-        m.body,
-        m.direction,
-        m.received_at,
-        c.phone_number,
-        c.push_name,
-        c.display_name,
-        ma.intent,
-        ma.urgency,
-        ma.category,
-        ma.sentiment,
-        r.response_text
-      FROM messages m
-      JOIN contacts c ON m.contact_id = c.id
-      LEFT JOIN message_analysis ma ON m.id = ma.message_id
-      LEFT JOIN responses r ON m.id = r.message_id
-      WHERE m.received_at >= ? AND m.direction = 'incoming'
-      ORDER BY m.received_at ASC
-    `).all(since);
-  }
 
   /**
    * Récupère les conversations groupées par contact pour le rapport IA
