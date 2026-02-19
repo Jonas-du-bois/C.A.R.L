@@ -30,3 +30,7 @@
 ## 2026-03-02 - Caching External API Calls for Frequent Schedule Lookups
 **Learning:** `CalendarService.getUpcomingEvents` was calling the Google Calendar API on every request, even for subsequent checks within the same conversation session. This caused significant latency and redundant API usage. By implementing a short-lived (5-minute) cache with a default fetch range (14 days), multiple queries (e.g., availability check -> slot proposal -> conflict check) can be served from memory.
 **Action:** Implement `eventsCache` in `CalendarService` with invalidation on write operations (`createEvent`, `createTask`). This reduces N API calls to 1 per 5 minutes for schedule-related queries, improving response time and reducing quota usage.
+
+## 2026-02-19 - Elimination of Redundant Report Queries
+**Learning:** `CronService` was executing two heavy reporting queries sequentially: `getConversationsForReport` (grouped data) and `getMessagesForReport` (flat data). The second query was only used to get a count, which was already available via `getQuickStats`. This caused unnecessary database load and memory usage for thousands of messages during daily reporting.
+**Action:** Removed the redundant `getMessagesForReport` query and updated the reporting logic to use existing statistics. Always verify if required data (like counts) is already available in lighter metadata queries before fetching full datasets.
