@@ -491,9 +491,32 @@ export class MessageRepository {
    * @param {number} maxMessagesPerContact - Limite de messages par contact (défaut: 20)
    * @returns {Object} Conversations groupées par contact avec métadonnées
    */
-  getConversationsForReport(maxMessagesPerContact = 20) {
+  getConversationsForReport(maxMessagesPerContact = 20, limitContacts = null) {
     const since = this.#getMidnightTimestamp();
     
+    let queryParams = [since];
+    let whereClause = 'WHERE m.received_at >= ?';
+
+    // ⚡ Bolt: Optimization - Limit to top N active contacts if requested
+    // This reduces the number of messages fetched and processed in JS
+    if (limitContacts) {
+      const topContacts = this.#db.prepare(`
+        SELECT contact_id
+        FROM messages
+        WHERE received_at >= ?
+        GROUP BY contact_id
+        ORDER BY COUNT(*) DESC
+        LIMIT ?
+      `).all(since, limitContacts);
+
+      if (topContacts.length === 0) return [];
+
+      const targetContactIds = topContacts.map(c => c.contact_id);
+      const placeholders = targetContactIds.map(() => '?').join(',');
+      whereClause += ` AND m.contact_id IN (${placeholders})`;
+      queryParams = [since, ...targetContactIds];
+    }
+
     // Récupérer tous les messages (entrants ET sortants) de la journée
     // ⚡ Bolt: Optimized query to sort only by received_at (indexed) to avoid expensive file sort
     // Grouping by contact is handled in application logic
@@ -514,9 +537,9 @@ export class MessageRepository {
       FROM messages m
       JOIN contacts c ON m.contact_id = c.id
       LEFT JOIN message_analysis ma ON m.id = ma.message_id
-      WHERE m.received_at >= ?
+      ${whereClause}
       ORDER BY m.received_at ASC
-    `).all(since);
+    `).all(...queryParams);
 
     // Grouper par contact
     const conversations = {};
