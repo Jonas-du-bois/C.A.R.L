@@ -57,6 +57,23 @@ export class Application {
     this.#logger = new Logger();
     this.#db = new SQLiteDatabase(this.#config);
     this.#queue = new QueueService({ concurrency: 3 });
+
+    // 🛡️ Sentinel: Clean up group timestamps periodically to prevent memory leaks
+    setInterval(() => this.#cleanupGroupTimestamps(), 5 * 60 * 1000).unref();
+  }
+
+  /**
+   * Nettoie les timestamps de groupe obsolètes
+   * Empêche la fuite de mémoire si le bot est ajouté à de nombreux groupes
+   */
+  #cleanupGroupTimestamps() {
+    const now = Date.now();
+    for (const [groupId, timestamp] of this.#groupMessageTimestamps.entries()) {
+      // Supprimer les entrées plus vieilles que 5 minutes
+      if (now - timestamp > 5 * 60 * 1000) {
+        this.#groupMessageTimestamps.delete(groupId);
+      }
+    }
   }
 
   /**
