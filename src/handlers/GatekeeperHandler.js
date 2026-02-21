@@ -1,6 +1,7 @@
 export class GatekeeperHandler {
   #userTimestamps = new Map();
   #now;
+  static MAX_MESSAGE_LENGTH = 4096;
 
   constructor(options = {}) {
     this.#now = options.now || Date.now;
@@ -12,6 +13,11 @@ export class GatekeeperHandler {
   }
 
   shouldProcess(message) {
+    // Rule 0: Max message length (DoS protection)
+    if (message.body && message.body.length > GatekeeperHandler.MAX_MESSAGE_LENGTH) {
+      return false;
+    }
+
     const now = this.#now();
     const timestamps = this.#userTimestamps.get(message.from) || [];
 

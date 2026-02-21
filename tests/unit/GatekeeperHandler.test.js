@@ -10,6 +10,24 @@ describe('GatekeeperHandler', () => {
   });
 
   describe('shouldProcess', () => {
+    it('should block messages exceeding max length', () => {
+      const longMessage = {
+        from: 'user1@s.whatsapp.net',
+        body: 'a'.repeat(GatekeeperHandler.MAX_MESSAGE_LENGTH + 1)
+      };
+
+      assert.strictEqual(gatekeeper.shouldProcess(longMessage), false);
+    });
+
+    it('should allow messages within max length', () => {
+      const validMessage = {
+        from: 'user1@s.whatsapp.net',
+        body: 'a'.repeat(GatekeeperHandler.MAX_MESSAGE_LENGTH)
+      };
+
+      assert.strictEqual(gatekeeper.shouldProcess(validMessage), true);
+    });
+
     it('should allow first message from a sender', () => {
       const message = { from: 'user1@s.whatsapp.net' };
       assert.strictEqual(gatekeeper.shouldProcess(message), true);
