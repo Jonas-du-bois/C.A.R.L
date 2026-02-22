@@ -75,6 +75,69 @@ export class CalendarService {
     }
   }
 
+  async #fetchEventsFromAllCalendars(start, end) {
+    // Récupérer la liste de tous les calendriers
+    let calendars = await this.getCalendarList();
+
+    // Ensure default calendar logic (restored from checkConflicts)
+    const defaultCalId = this.#config.google?.calendarId;
+    if (defaultCalId) {
+        // Check if calendars list contains default calendar
+        const hasDefault = calendars.some(c => c.id === defaultCalId);
+        if (!hasDefault) {
+            calendars.push({ id: defaultCalId, name: 'Calendrier principal' });
+        }
+    }
+
+    if (calendars.length === 0) {
+      return [];
+    }
+
+    const promises = calendars.map(async (cal) => {
+      let items = [];
+      let pageToken = undefined;
+
+      try {
+        do {
+          const params = {
+            calendarId: cal.id,
+            timeMin: start.toISOString(),
+            timeMax: end.toISOString(),
+            singleEvents: true,
+            orderBy: 'startTime',
+          };
+
+          if (pageToken) {
+            params.pageToken = pageToken;
+          }
+
+          const res = await this.#calendar.events.list(params);
+
+          const pageItems = (res.data.items || []).map(event => ({
+            ...event,
+            calendarName: cal.name,
+            calendarId: cal.id
+          }));
+
+          items = items.concat(pageItems);
+          pageToken = res.data.nextPageToken;
+        } while (pageToken);
+
+        return items;
+      } catch (error) {
+        console.error(`Failed to fetch events from calendar ${cal.name}:`, error.message);
+        return [];
+      }
+    });
+
+    const results = await Promise.all(promises);
+    return results.flat().sort((a, b) => {
+      const aStart = new Date(a.start?.dateTime || a.start?.date);
+      const bStart = new Date(b.start?.dateTime || b.start?.date);
+      return aStart - bStart;
+    });
+  }
+
   /**
    * Récupère les événements des prochains jours de TOUS les calendriers
    * @param {number} daysAhead - Nombre de jours à regarder (défaut: 7)
@@ -105,64 +168,8 @@ export class CalendarService {
       const future = new Date();
       future.setDate(future.getDate() + rangeDays);
 
-      // Récupérer la liste de tous les calendriers
-      const calendars = await this.getCalendarList();
-      
-      if (calendars.length === 0) {
-        // Fallback: utiliser le calendrier configuré
-        const res = await this.#calendar.events.list({
-          calendarId: this.#config.google.calendarId,
-          timeMin: startDate.toISOString(),
-          timeMax: future.toISOString(),
-          singleEvents: true,
-          orderBy: 'startTime',
-        });
-        const items = res.data.items || [];
-
-        // Update cache
-        this.#eventsCache = {
-          items,
-          timestamp: now,
-          rangeDays
-        };
-
-        // Filter for return
-        const cutoff = new Date();
-        cutoff.setDate(cutoff.getDate() + daysAhead);
-        return items.filter(e => new Date(e.start.dateTime || e.start.date) <= cutoff);
-      }
-
-      // Récupérer les événements de chaque calendrier en parallèle
-      const allEventsPromises = calendars.map(async (cal) => {
-        try {
-          const res = await this.#calendar.events.list({
-            calendarId: cal.id,
-            timeMin: startDate.toISOString(),
-            timeMax: future.toISOString(),
-            singleEvents: true,
-            orderBy: 'startTime',
-          });
-          // Ajouter le nom du calendrier à chaque événement
-          return (res.data.items || []).map(event => ({
-            ...event,
-            calendarName: cal.name,
-            calendarId: cal.id
-          }));
-        } catch (error) {
-          console.error(`Failed to fetch events from calendar ${cal.name}:`, error.message);
-          return [];
-        }
-      });
-
-      const allEventsArrays = await Promise.all(allEventsPromises);
-      const allEvents = allEventsArrays.flat();
-
-      // Trier par date de début
-      allEvents.sort((a, b) => {
-        const aStart = new Date(a.start?.dateTime || a.start?.date);
-        const bStart = new Date(b.start?.dateTime || b.start?.date);
-        return aStart - bStart;
-      });
+      // Use helper to fetch from all calendars
+      const allEvents = await this.#fetchEventsFromAllCalendars(startDate, future);
 
       // Update cache
       this.#eventsCache = {
@@ -219,58 +226,24 @@ export class CalendarService {
         });
       } else {
         // Fallback to fetch logic
-        // Récupérer tous les calendriers
-        let calendars = await this.getCalendarList();
+        // Calculate how many days ahead we need to fetch (clamped to min 1)
+        const daysAhead = Math.max(1, Math.ceil((startTime - now) / (1000 * 60 * 60 * 24)) + 1);
 
-        // Si aucun calendrier trouvé via l'API, utiliser le calendrier par défaut
-        if (calendars.length === 0 && this.#config.google?.calendarId) {
-          calendars = [{
-            id: this.#config.google.calendarId,
-            name: 'Calendrier principal'
-          }];
+        // Threshold check to prevent over-fetching for distant future (> 14 days)
+        // Match CACHE_DAYS to balance latency and cache warming
+        if (daysAhead <= 14) {
+             // Use getUpcomingEvents to populate cache for near future
+             const allEvents = await this.getUpcomingEvents(daysAhead);
+
+             dayEvents = allEvents.filter(e => {
+                const eStart = new Date(e.start.dateTime || e.start.date);
+                return eStart >= dayStart && eStart <= dayEnd;
+             });
+        } else {
+             // Specific fetch for distant future (no caching of huge range)
+             console.log(`[CalendarService] Fetching specific day for distant future conflict check: ${startTime.toISOString()}`);
+             dayEvents = await this.#fetchEventsFromAllCalendars(dayStart, dayEnd);
         }
-
-        // S'assurer que le calendrier par défaut est inclus (évite les doublons)
-        const defaultCalId = this.#config.google?.calendarId;
-        if (defaultCalId && !calendars.some(c => c.id === defaultCalId)) {
-          calendars.push({
-            id: defaultCalId,
-            name: 'Calendrier principal'
-          });
-        }
-
-        if (calendars.length === 0) {
-          console.warn('[CalendarService] No calendars available for conflict check');
-          return { hasConflict: false, conflicts: [], suggestion: null };
-        }
-
-        console.log(`[CalendarService] Checking conflicts across ${calendars.length} calendar(s)`);
-
-        // Récupérer les événements de chaque calendrier pour ce jour
-        const allEventsPromises = calendars.map(async (cal) => {
-          try {
-            const res = await this.#calendar.events.list({
-              calendarId: cal.id,
-              timeMin: dayStart.toISOString(),
-              timeMax: dayEnd.toISOString(),
-              singleEvents: true,
-              orderBy: 'startTime',
-            });
-            return (res.data.items || []).map(event => ({
-              ...event,
-              calendarName: cal.name
-            }));
-          } catch (error) {
-            return [];
-          }
-        });
-
-        const allEventsArrays = await Promise.all(allEventsPromises);
-        dayEvents = allEventsArrays.flat().sort((a, b) => {
-          const aStart = new Date(a.start?.dateTime || a.start?.date);
-          const bStart = new Date(b.start?.dateTime || b.start?.date);
-          return aStart - bStart;
-        });
       }
 
       // Chercher les conflits
