@@ -295,6 +295,51 @@ describe('MessageRepository Integration', () => {
       assert.strictEqual(stats.total_contacts, 2);
       assert.strictEqual(stats.total_messages_received, 2);
     });
+
+    it('should get top contacts by message count', () => {
+      // 1. Setup contacts
+      const c1 = repository.findOrCreateContact('user1@s.whatsapp.net', { pushName: 'Alice' }); // Total 5
+      const c2 = repository.findOrCreateContact('user2@s.whatsapp.net', { pushName: 'Bob' });   // Total 10
+      const c3 = repository.findOrCreateContact('user3@s.whatsapp.net', { pushName: 'Charlie' }); // Total 0
+
+      // 2. Simulate activity
+      // Alice: 3 in, 2 out
+      for (let i = 0; i < 3; i++) {
+        repository.saveIncomingMessage(new Message({ id: `a-in-${i}`, from: 'user1', body: 'hi', timestamp: Date.now() }), c1.id);
+      }
+      for (let i = 0; i < 2; i++) {
+        repository.saveOutgoingMessage(`a-out-${i}`, c1.id, 'bye', Date.now());
+      }
+
+      // Bob: 5 in, 5 out
+      for (let i = 0; i < 5; i++) {
+        repository.saveIncomingMessage(new Message({ id: `b-in-${i}`, from: 'user2', body: 'hi', timestamp: Date.now() }), c2.id);
+      }
+      for (let i = 0; i < 5; i++) {
+        repository.saveOutgoingMessage(`b-out-${i}`, c2.id, 'bye', Date.now());
+      }
+
+      // 3. Get top contacts
+      const top = repository.getTopContacts(10);
+
+      // 4. Verify
+      assert.strictEqual(top.length, 3);
+
+      // #1 Bob (10 total)
+      assert.strictEqual(top[0].phone_number, 'user2@s.whatsapp.net');
+      assert.strictEqual(top[0].messages_received, 5);
+      assert.strictEqual(top[0].messages_sent, 5);
+
+      // #2 Alice (5 total)
+      assert.strictEqual(top[1].phone_number, 'user1@s.whatsapp.net');
+      assert.strictEqual(top[1].messages_received, 3);
+      assert.strictEqual(top[1].messages_sent, 2);
+
+      // #3 Charlie (0 total)
+      assert.strictEqual(top[2].phone_number, 'user3@s.whatsapp.net');
+      assert.strictEqual(top[2].messages_received, 0);
+      assert.strictEqual(top[2].messages_sent, 0);
+    });
   });
 
   describe('Legacy save method', () => {
