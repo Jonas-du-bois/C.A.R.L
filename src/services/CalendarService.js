@@ -628,6 +628,10 @@ export class CalendarService {
     }
 
     try {
+      // 🛡️ Sentinel: Enforce input validation for tasks (same as events)
+      // prevents massive payloads/DoS
+      this.#validateEventInput(input);
+
       const title = `📋 ${input.summary || 'Tâche'}`;
       const description = input.description || '';
       
