@@ -27,3 +27,8 @@
 **Vulnerability:** Denial of Service (DoS) via memory exhaustion in `GatekeeperHandler`. The handler stored user timestamps in an unbounded `Map` without cleanup, allowing an attacker to exhaust server memory by sending messages from many unique identifiers.
 **Learning:** Any stateful mechanism tracking user activity (like rate limits) must implement a cleanup strategy (TTL or periodic purge) to prevent unbounded growth.
 **Prevention:** Implemented a periodic `cleanup()` task in `GatekeeperHandler` that removes users with no recent activity every 5 minutes.
+
+## 2025-05-29 - Missing Input Validation in Calendar Tasks
+**Vulnerability:** The `CalendarService.createTask` method lacked input validation, allowing the creation of tasks with excessively long summaries or descriptions. This could lead to Denial of Service (DoS) or API errors if exploited by a malicious user or a hallucinating AI.
+**Learning:** Consistency is key. Even if "Tasks" seem simpler than "Events", they handle user input and interact with external APIs, so they require the same rigorous validation.
+**Prevention:** Enforced `#validateEventInput` in `createTask`, ensuring all calendar-related inputs respect the same length limits (255 chars for summary, 4096 for description).
