@@ -23,24 +23,13 @@ import { Message } from '../domain/Message.js';
  */
 
 // Mots-clés pour détecter les messages organisationnels dans les groupes
-const ORGANIZATIONAL_KEYWORDS = [
-  // Événements et rendez-vous
-  'rdv', 'rendez-vous', 'rendezvous', 'meeting', 'réunion', 'reunion',
-  // Temps
-  'demain', 'ce soir', 'samedi', 'dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi',
-  'semaine prochaine', 'weekend', 'week-end',
-  // Heures
-  /\d{1,2}[h:]\d{0,2}/i, /à \d{1,2}h/i,
-  // Lieux et activités
-  'on se retrouve', 'on se voit', 'chez', 'resto', 'restaurant', 'bar', 'café', 'cinema', 'cinéma',
-  'soirée', 'fête', 'anniversaire', 'mariage', 'apéro', 'bbq', 'barbecue',
-  // Propositions
-  'ça vous dit', 'ca vous dit', 'qui est dispo', 'qui vient', 'on fait quoi',
-  'vous êtes libres', 'vous etes libres', 'dispo ?', 'disponible',
-  // Confirmations
-  'je viens', 'je serai là', 'je serai la', 'compte sur moi', 'présent', 'ok pour',
-  // Sport et activités
-  'match', 'entrainement', 'entraînement', 'course', 'rando', 'randonnée', 'ski', 'sortie'
+// ⚡ Bolt: Compiled into a single optimized RegExp for O(N) matching
+const ORGANIZATIONAL_PATTERNS = [
+  // Combined keywords (rdv, time, locations, propositions, confirmations, activities)
+  /rdv|rendez-vous|rendezvous|meeting|réunion|reunion|demain|ce soir|samedi|dimanche|lundi|mardi|mercredi|jeudi|vendredi|semaine prochaine|weekend|week-end|on se retrouve|on se voit|chez|resto|restaurant|bar|café|cinema|cinéma|soirée|fête|anniversaire|mariage|apéro|bbq|barbecue|ça vous dit|ca vous dit|qui est dispo|qui vient|on fait quoi|vous êtes libres|vous etes libres|dispo \?|disponible|je viens|je serai là|je serai la|compte sur moi|présent|ok pour|match|entrainement|entraînement|course|rando|randonnée|ski|sortie/i,
+  // Existing regex patterns for time formats
+  /\d{1,2}[h:]\d{0,2}/i,
+  /à \d{1,2}h/i
 ];
 
 export class Application {
@@ -51,6 +40,7 @@ export class Application {
   #queue;
   #telegramService;
   #groupMessageTimestamps = new Map(); // Rate limiting pour les groupes
+  #cleanupInterval; // ⚡ Bolt: Cleanup timer
 
   constructor() {
     this.#config = new Config();
@@ -79,6 +69,7 @@ export class Application {
 
       // Démarrage
       this.#setupGracefulShutdown();
+      this.#startCleanupInterval(); // ⚡ Bolt: Start memory cleanup
       await this.#whatsapp.initialize();
       
       this.#logger.info('WhatsApp client initialized');
@@ -328,14 +319,9 @@ export class Application {
   #isOrganizationalMessage(text) {
     if (!text || text.length < 5) return false;
     
-    const lowerText = text.toLowerCase();
-    
-    for (const keyword of ORGANIZATIONAL_KEYWORDS) {
-      if (keyword instanceof RegExp) {
-        if (keyword.test(text)) return true;
-      } else if (lowerText.includes(keyword)) {
-        return true;
-      }
+    // ⚡ Bolt: Optimized check using compiled regex patterns
+    for (const pattern of ORGANIZATIONAL_PATTERNS) {
+      if (pattern.test(text)) return true;
     }
     
     return false;
@@ -475,6 +461,38 @@ export class Application {
   }
 
   // ============================================
+  // MAINTENANCE
+  // ============================================
+
+  /**
+   * ⚡ Bolt: Automatic cleanup of old group rate limits to prevent memory leaks
+   */
+  #startCleanupInterval() {
+    // Run every 5 minutes (300000 ms)
+    this.#cleanupInterval = setInterval(() => {
+      const now = Date.now();
+      let cleaned = 0;
+
+      for (const [groupId, timestamp] of this.#groupMessageTimestamps.entries()) {
+        // If older than 5 minutes, remove
+        if (now - timestamp > 300000) {
+          this.#groupMessageTimestamps.delete(groupId);
+          cleaned++;
+        }
+      }
+
+      if (cleaned > 0) {
+        this.#logger.debug(`Cleaned ${cleaned} expired group rate limits`);
+      }
+    }, 300000);
+
+    // Unref so it doesn't block process exit if not cleared
+    if (this.#cleanupInterval.unref) {
+      this.#cleanupInterval.unref();
+    }
+  }
+
+  // ============================================
   // SHUTDOWN
   // ============================================
 
@@ -486,6 +504,7 @@ export class Application {
       this.#logger.info(`Received ${signal}, shutting down gracefully...`);
       
       try {
+        if (this.#cleanupInterval) clearInterval(this.#cleanupInterval);
         this.#telegramService?.stopPolling();
         await this.#queue.onIdle();
         
