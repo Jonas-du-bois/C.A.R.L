@@ -199,15 +199,17 @@ export class MessageRepository {
   /**
    * Récupère les messages récents par ID de contact (Optimisé pour éviter JOIN inutile)
    * Utilise l'index idx_messages_contact_received(contact_id, received_at DESC)
+   *
+   * NOTE: Cette méthode ne récupère PAS les données d'analyse (urgence, catégorie)
+   * pour optimiser la performance de récupération du contexte pour l'IA.
+   * Les valeurs par défaut ('low', 'other') sont utilisées.
    */
   findRecentByContactId(contactId, phoneNumber, limit = 10) {
     const rows = this.#db.prepare(`
-      SELECT m.message_id as id, m.body, m.received_at as timestamp,
-             ma.urgency, ma.category
-      FROM messages m
-      LEFT JOIN message_analysis ma ON m.id = ma.message_id
-      WHERE m.contact_id = ?
-      ORDER BY m.received_at DESC
+      SELECT message_id as id, body, received_at as timestamp
+      FROM messages
+      WHERE contact_id = ?
+      ORDER BY received_at DESC
       LIMIT ?
     `).all(contactId, limit);
 
@@ -216,8 +218,8 @@ export class MessageRepository {
       from: phoneNumber, // On passe le numéro directement puisqu'on le connaît déjà
       body: row.body,
       timestamp: row.timestamp,
-      urgency: row.urgency || 'low',
-      category: row.category || 'other'
+      urgency: 'low', // Default: Analysis data is not needed for context
+      category: 'other' // Default: Analysis data is not needed for context
     })).reverse();
   }
 
