@@ -12,6 +12,12 @@ export class GatekeeperHandler {
   }
 
   shouldProcess(message) {
+    // Rule 0: Payload size limit (DoS protection)
+    // Max 4096 characters to prevent massive payloads from consuming memory/processing
+    if (message.body && message.body.length > 4096) {
+      return false;
+    }
+
     const now = this.#now();
     const timestamps = this.#userTimestamps.get(message.from) || [];
 
