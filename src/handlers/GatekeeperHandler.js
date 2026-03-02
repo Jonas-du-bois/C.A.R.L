@@ -12,6 +12,12 @@ export class GatekeeperHandler {
   }
 
   shouldProcess(message) {
+    // 🛡️ Sentinel: Enforce payload size limit (max 4096 chars)
+    // Rejects massive payloads immediately to prevent DoS via regex/parsing
+    if (message.body && typeof message.body === 'string' && message.body.length > 4096) {
+      return false;
+    }
+
     const now = this.#now();
     const timestamps = this.#userTimestamps.get(message.from) || [];
 
