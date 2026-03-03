@@ -297,6 +297,42 @@ describe('MessageRepository Integration', () => {
     });
   });
 
+  describe('Top Contacts', () => {
+    it('should return top contacts sorted by total messages', () => {
+      // 1. Create two contacts
+      const contact1 = repository.findOrCreateContact('top1@s.whatsapp.net', { pushName: 'Active User' }, { incrementReceived: true });
+      const contact2 = repository.findOrCreateContact('top2@s.whatsapp.net', { pushName: 'Quiet User' }, { incrementReceived: true });
+      const contact3 = repository.findOrCreateContact('top3@s.whatsapp.net', { pushName: 'Silent User' }); // 0 messages
+
+      const now = Date.now();
+
+      // 2. Save 2 incoming messages and 2 outgoing for contact1 (Total 5 considering initial increment)
+      repository.saveIncomingMessage(new Message({ id: 'in1', from: 'top1', body: 'Hi', timestamp: now }), contact1.id, { skipStatsUpdate: false });
+      repository.saveIncomingMessage(new Message({ id: 'in2', from: 'top1', body: 'There', timestamp: now }), contact1.id, { skipStatsUpdate: false });
+      repository.saveOutgoingMessage('out1', contact1.id, 'Hello', now);
+      repository.saveOutgoingMessage('out2', contact1.id, 'How are you', now);
+
+      // 3. Save 1 incoming message for contact2 (Total 2 considering initial increment)
+      repository.saveIncomingMessage(new Message({ id: 'in3', from: 'top2', body: 'Yo', timestamp: now }), contact2.id, { skipStatsUpdate: false });
+
+      // 4. Call getTopContacts
+      const topContacts = repository.getTopContacts(2);
+
+      // 5. Assertions
+      assert.strictEqual(topContacts.length, 2);
+
+      // First should be contact1
+      assert.strictEqual(topContacts[0].id, contact1.id);
+      assert.strictEqual(topContacts[0].messages_received, 3); // 1 initial + 2 incoming
+      assert.strictEqual(topContacts[0].messages_sent, 2);     // 2 outgoing
+
+      // Second should be contact2
+      assert.strictEqual(topContacts[1].id, contact2.id);
+      assert.strictEqual(topContacts[1].messages_received, 2); // 1 initial + 1 incoming
+      assert.strictEqual(topContacts[1].messages_sent, 0);
+    });
+  });
+
   describe('Legacy save method', () => {
     it('should work with legacy save method', () => {
       const message = new Message({
