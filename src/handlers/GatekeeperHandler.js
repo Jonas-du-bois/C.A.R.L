@@ -12,6 +12,12 @@ export class GatekeeperHandler {
   }
 
   shouldProcess(message) {
+    // SECURITY: Limit message body length to mitigate DoS (Denial of Service) attacks
+    // from massive payloads. This check happens *before* rate-limiting to save resources.
+    if (message.body && message.body.length > 4096) {
+      return false;
+    }
+
     const now = this.#now();
     const timestamps = this.#userTimestamps.get(message.from) || [];
 
