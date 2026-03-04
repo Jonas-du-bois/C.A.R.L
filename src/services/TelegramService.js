@@ -283,6 +283,26 @@ export class TelegramService {
   }
 
   /**
+   * Log des erreurs de manière sécurisée sans exposer le botToken
+   */
+  #logError(message, error) {
+    if (!error) {
+      console.error(message);
+      return;
+    }
+
+    const errorString = error instanceof Error
+      ? `${error.name}: ${error.message}\n${error.stack}`
+      : String(error);
+
+    const safeErrorString = this.#botToken
+      ? errorString.split(this.#botToken).join('[HIDDEN_TOKEN]')
+      : errorString;
+
+    console.error(message, safeErrorString);
+  }
+
+  /**
    * Answer a callback query
    */
   async answerCallback(callbackQueryId, text = null) {
@@ -298,7 +318,7 @@ export class TelegramService {
         })
       });
     } catch (error) {
-      console.error('Failed to answer callback:', error);
+      this.#logError('Failed to answer callback:', error);
     }
   }
 
@@ -388,10 +408,10 @@ export class TelegramService {
 
       if (!response.ok) {
         const error = await response.text();
-        console.error('Telegram API Error:', error);
+        this.#logError('Telegram API Error:', error);
       }
     } catch (error) {
-      console.error('Failed to send Telegram message:', error);
+      this.#logError('Failed to send Telegram message:', error);
     }
   }
 
@@ -420,12 +440,12 @@ export class TelegramService {
 
       if (!response.ok) {
         const error = await response.text();
-        console.error('Telegram API Error (QR):', error);
+        this.#logError('Telegram API Error (QR):', error);
       } else {
         console.log('QR Code sent to Telegram successfully');
       }
     } catch (error) {
-      console.error('Failed to send QR code to Telegram:', error);
+      this.#logError('Failed to send QR code to Telegram:', error);
     }
   }
 }
