@@ -104,6 +104,36 @@ describe('TelegramService', () => {
       await telegramService.sendMessage('Test message');
     });
 
+    it('should sanitize error logs to prevent bot token leakage', async () => {
+      const config = {
+        telegram: {
+          botToken: 'secret-token-123',
+          adminId: '123456'
+        }
+      };
+
+      telegramService = new TelegramService(config);
+
+      global.fetch = async () => {
+        throw new Error('Failed to fetch https://api.telegram.org/botsecret-token-123/sendMessage');
+      };
+
+      const originalConsoleError = console.error;
+      let loggedError = '';
+      console.error = (msg, err) => {
+        loggedError = err;
+      };
+
+      try {
+        await telegramService.sendMessage('Test message');
+
+        assert.ok(loggedError.includes('[REDACTED]'), 'Error should contain [REDACTED]');
+        assert.ok(!loggedError.includes('secret-token-123'), 'Error should not contain the bot token');
+      } finally {
+        console.error = originalConsoleError;
+      }
+    });
+
     it('should log error when API returns non-ok response', async () => {
       const config = {
         telegram: {
