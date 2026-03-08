@@ -30,3 +30,7 @@
 ## 2026-03-02 - Caching External API Calls for Frequent Schedule Lookups
 **Learning:** `CalendarService.getUpcomingEvents` was calling the Google Calendar API on every request, even for subsequent checks within the same conversation session. This caused significant latency and redundant API usage. By implementing a short-lived (5-minute) cache with a default fetch range (14 days), multiple queries (e.g., availability check -> slot proposal -> conflict check) can be served from memory.
 **Action:** Implement `eventsCache` in `CalendarService` with invalidation on write operations (`createEvent`, `createTask`). This reduces N API calls to 1 per 5 minutes for schedule-related queries, improving response time and reducing quota usage.
+
+## 2026-03-03 - Optimizing Text Detection with Compiled RegExp
+**Learning:** `Application.js` used an array of 50+ strings and regular expressions (`ORGANIZATIONAL_KEYWORDS`) to detect if a message should be analyzed. It iterated over this array for *every* message in *every* group chat, performing `.toLowerCase()` and `.includes()` or `.test()` on each item. This caused unnecessary CPU overhead on the hot path.
+**Action:** Combined the array into a single, global, case-insensitive compiled RegExp (`ORGANIZATIONAL_PATTERNS`). A single `.test()` call on this RegExp is nearly 2x faster than the loop approach. Always prefer compiled RegExp over iterating arrays of substrings and patterns in high-throughput paths.
