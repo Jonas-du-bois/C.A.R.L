@@ -11,6 +11,13 @@ export class TelegramService {
   #callbackHandlers = new Map();
   #recentCommands = new Map();   // key: userId|messageId -> timestamp
   
+  #sanitizeError(error) {
+    if (!error) return error;
+    const errorStr = error instanceof Error ? (error.stack || error.message) : String(error);
+    if (!this.#botToken) return errorStr;
+    return errorStr.split(this.#botToken).join('[REDACTED]');
+  }
+
   // ============================================
   // SESSION STATE - Pour workflow interactif
   // ============================================
@@ -240,7 +247,7 @@ export class TelegramService {
       try {
         await handler(args, message);
       } catch (error) {
-        await this.sendMessage(`❌ Erreur: ${escapeHtml(error.message)}`);
+        await this.sendMessage(`❌ Erreur: ${escapeHtml(this.#sanitizeError(error))}`);
       }
     } else {
       await this.sendMessage(
@@ -275,7 +282,7 @@ export class TelegramService {
           // Répondre au callback pour enlever le "loading"
           await this.answerCallback(callbackQuery.id);
         } catch (error) {
-          await this.answerCallback(callbackQuery.id, `❌ ${error.message}`);
+          await this.answerCallback(callbackQuery.id, `❌ ${this.#sanitizeError(error)}`);
         }
         return;
       }
@@ -298,7 +305,7 @@ export class TelegramService {
         })
       });
     } catch (error) {
-      console.error('Failed to answer callback:', error);
+      console.error('Failed to answer callback:', this.#sanitizeError(error));
     }
   }
 
@@ -388,10 +395,10 @@ export class TelegramService {
 
       if (!response.ok) {
         const error = await response.text();
-        console.error('Telegram API Error:', error);
+        console.error('Telegram API Error:', this.#sanitizeError(error));
       }
     } catch (error) {
-      console.error('Failed to send Telegram message:', error);
+      console.error('Failed to send Telegram message:', this.#sanitizeError(error));
     }
   }
 
@@ -420,12 +427,12 @@ export class TelegramService {
 
       if (!response.ok) {
         const error = await response.text();
-        console.error('Telegram API Error (QR):', error);
+        console.error('Telegram API Error (QR):', this.#sanitizeError(error));
       } else {
         console.log('QR Code sent to Telegram successfully');
       }
     } catch (error) {
-      console.error('Failed to send QR code to Telegram:', error);
+      console.error('Failed to send QR code to Telegram:', this.#sanitizeError(error));
     }
   }
 }
