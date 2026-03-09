@@ -30,3 +30,7 @@
 ## 2026-03-02 - Caching External API Calls for Frequent Schedule Lookups
 **Learning:** `CalendarService.getUpcomingEvents` was calling the Google Calendar API on every request, even for subsequent checks within the same conversation session. This caused significant latency and redundant API usage. By implementing a short-lived (5-minute) cache with a default fetch range (14 days), multiple queries (e.g., availability check -> slot proposal -> conflict check) can be served from memory.
 **Action:** Implement `eventsCache` in `CalendarService` with invalidation on write operations (`createEvent`, `createTask`). This reduces N API calls to 1 per 5 minutes for schedule-related queries, improving response time and reducing quota usage.
+
+## 2026-03-03 - Purging Redundant Queries for Deprecated Features
+**Learning:** `CronService` was fetching all raw messages for the day (`getMessagesForReport`) just for "compatibility", even though the application exclusively used the new grouped format (`getConversationsForReport`). This resulted in an expensive DB query with three `LEFT JOIN`s running daily, simply to log the `.length` of the result.
+**Action:** Removed `getMessagesForReport` entirely. When deprecating a data structure in favor of a more optimized one, ensure all unused DB queries fetching the old structure are removed, rather than keeping them around just to populate logs or fallback parameters.
