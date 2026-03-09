@@ -123,6 +123,64 @@ describe('TelegramService', () => {
       await telegramService.sendMessage('Test message');
     });
   });
+
+
+  describe('Security (Sentinel)', () => {
+    it('should sanitize bot token from fetch errors in sendMessage', async () => {
+      const config = {
+        telegram: {
+          botToken: 'secret-token-123',
+          adminId: '123456'
+        }
+      };
+
+      telegramService = new TelegramService(config);
+
+      const originalConsoleError = console.error;
+      let errorLogged = '';
+      console.error = (msg, err) => {
+        errorLogged = err;
+      };
+
+      global.fetch = async () => {
+        throw new Error('Failed to fetch https://api.telegram.org/botsecret-token-123/sendMessage');
+      };
+
+      await telegramService.sendMessage('Test message');
+      console.error = originalConsoleError;
+
+      assert.strictEqual(errorLogged.includes('secret-token-123'), false, 'Bot token should not be present in error log');
+      assert.strictEqual(errorLogged.includes('[REDACTED]'), true, 'Bot token should be replaced with [REDACTED]');
+    });
+
+    it('should sanitize bot token from API errors in sendMessage', async () => {
+      const config = {
+        telegram: {
+          botToken: 'secret-token-123',
+          adminId: '123456'
+        }
+      };
+
+      telegramService = new TelegramService(config);
+
+      const originalConsoleError = console.error;
+      let errorLogged = '';
+      console.error = (msg, err) => {
+        errorLogged = err;
+      };
+
+      global.fetch = async () => ({
+        ok: false,
+        text: async () => 'Error with token secret-token-123 inside'
+      });
+
+      await telegramService.sendMessage('Test message');
+      console.error = originalConsoleError;
+
+      assert.strictEqual(errorLogged.includes('secret-token-123'), false, 'Bot token should not be present in API error log');
+      assert.strictEqual(errorLogged.includes('[REDACTED]'), true, 'Bot token should be replaced with [REDACTED]');
+    });
+  });
 });
 
 function afterEach(fn) {
