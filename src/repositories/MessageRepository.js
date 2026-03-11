@@ -626,11 +626,14 @@ export class MessageRepository {
    * Statistiques globales
    */
   getGlobalStats() {
+    // ⚡ Bolt: Optimized query by replacing full table scans (COUNT(*)) on the large `messages` table
+    // with fast aggregations (SUM()) on the pre-calculated stats columns in the smaller `contacts` table.
+    // This reduces query time significantly as the messages table grows.
     return this.#db.prepare(`
       SELECT
         (SELECT COUNT(*) FROM contacts) as total_contacts,
-        (SELECT COUNT(*) FROM messages WHERE direction = 'incoming') as total_messages_received,
-        (SELECT COUNT(*) FROM messages WHERE direction = 'outgoing') as total_messages_sent,
+        (SELECT COALESCE(SUM(total_messages_received), 0) FROM contacts) as total_messages_received,
+        (SELECT COALESCE(SUM(total_messages_sent), 0) FROM contacts) as total_messages_sent,
         (SELECT COUNT(*) FROM message_analysis) as total_analyzed,
         (SELECT COUNT(*) FROM errors) as total_errors,
         (SELECT SUM(tokens_used) FROM message_analysis) as total_tokens_used
