@@ -12,6 +12,12 @@ export class GatekeeperHandler {
   }
 
   shouldProcess(message) {
+    // Security: Fast-fail on massive payloads (DoS protection)
+    // 4096 is the maximum length allowed by the system
+    if (typeof message.body === 'string' && message.body.length > 4096) {
+      return false;
+    }
+
     const now = this.#now();
     const timestamps = this.#userTimestamps.get(message.from) || [];
 
