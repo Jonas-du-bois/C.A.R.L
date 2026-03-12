@@ -194,6 +194,7 @@ export class SQLiteDatabase {
       CREATE INDEX IF NOT EXISTS idx_message_analysis_category ON message_analysis(category);
       CREATE INDEX IF NOT EXISTS idx_message_analysis_sentiment ON message_analysis(sentiment);
       CREATE INDEX IF NOT EXISTS idx_contacts_phone ON contacts(phone_number);
+      CREATE INDEX IF NOT EXISTS idx_contacts_total_msgs ON contacts((total_messages_received + total_messages_sent) DESC);
       CREATE INDEX IF NOT EXISTS idx_contacts_last_seen ON contacts(last_seen_at);
       CREATE INDEX IF NOT EXISTS idx_conversations_contact_id ON conversations(contact_id);
       CREATE INDEX IF NOT EXISTS idx_conversations_status ON conversations(status);
