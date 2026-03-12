@@ -23,6 +23,37 @@ export class TelegramService {
     this.#allowedUserId = config.telegram.allowedUserId || config.telegram.adminId;
   }
 
+  /**
+   * Sanitizes error messages by removing sensitive information like bot tokens
+   * @param {Error|string} error
+   * @returns {Error|string}
+   */
+  #sanitizeError(error) {
+    if (!error) return error;
+    if (!this.#botToken) return error;
+
+    // Escape regex characters in the bot token
+    const escapedToken = this.#botToken.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const tokenRegex = new RegExp(escapedToken, 'g');
+    const replacement = '[HIDDEN_TOKEN]';
+
+    if (error instanceof Error) {
+      if (error.message) {
+        error.message = error.message.replace(tokenRegex, replacement);
+      }
+      if (error.stack) {
+        error.stack = error.stack.replace(tokenRegex, replacement);
+      }
+      return error;
+    }
+
+    if (typeof error === 'string') {
+      return error.replace(tokenRegex, replacement);
+    }
+
+    return error;
+  }
+
   // ============================================
   // GESTION DES ÉVÉNEMENTS EN ATTENTE
   // ============================================
@@ -168,6 +199,7 @@ export class TelegramService {
       }
     } catch (error) {
       // Silently ignore polling errors
+      this.#sanitizeError(error);
     } finally {
       this.#isPolling = false;
     }
@@ -298,7 +330,7 @@ export class TelegramService {
         })
       });
     } catch (error) {
-      console.error('Failed to answer callback:', error);
+      console.error('Failed to answer callback:', this.#sanitizeError(error));
     }
   }
 
@@ -388,10 +420,10 @@ export class TelegramService {
 
       if (!response.ok) {
         const error = await response.text();
-        console.error('Telegram API Error:', error);
+        console.error('Telegram API Error:', this.#sanitizeError(error));
       }
     } catch (error) {
-      console.error('Failed to send Telegram message:', error);
+      console.error('Failed to send Telegram message:', this.#sanitizeError(error));
     }
   }
 
@@ -420,12 +452,12 @@ export class TelegramService {
 
       if (!response.ok) {
         const error = await response.text();
-        console.error('Telegram API Error (QR):', error);
+        console.error('Telegram API Error (QR):', this.#sanitizeError(error));
       } else {
         console.log('QR Code sent to Telegram successfully');
       }
     } catch (error) {
-      console.error('Failed to send QR code to Telegram:', error);
+      console.error('Failed to send QR code to Telegram:', this.#sanitizeError(error));
     }
   }
 }
