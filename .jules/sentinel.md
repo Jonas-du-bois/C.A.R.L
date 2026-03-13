@@ -27,3 +27,8 @@
 **Vulnerability:** Denial of Service (DoS) via memory exhaustion in `GatekeeperHandler`. The handler stored user timestamps in an unbounded `Map` without cleanup, allowing an attacker to exhaust server memory by sending messages from many unique identifiers.
 **Learning:** Any stateful mechanism tracking user activity (like rate limits) must implement a cleanup strategy (TTL or periodic purge) to prevent unbounded growth.
 **Prevention:** Implemented a periodic `cleanup()` task in `GatekeeperHandler` that removes users with no recent activity every 5 minutes.
+
+## 2025-05-29 - Token Leak in Telegram Error Logs
+**Vulnerability:** Exposed Telegram `botToken` in external api log outputs on network or API failures in `TelegramService`. `fetch` inherently prints full URLs in stack traces.
+**Learning:** Any service interacting with APIs that embed secrets in the URL (e.g., Telegram, webhooks) must actively intercept and scrub error objects and strings before logging them, as standard HTTP clients like `fetch` will leak the full URL on failure.
+**Prevention:** Added a private method `#sanitizeError(error)` to `TelegramService.js` that escapes `botToken` and actively strips out the token out of stack traces/error strings, replacing it with `[HIDDEN_TOKEN]`. It wraps error objects around this method in exception handling across `TelegramService` methods.
