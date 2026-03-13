@@ -30,3 +30,7 @@
 ## 2026-03-02 - Caching External API Calls for Frequent Schedule Lookups
 **Learning:** `CalendarService.getUpcomingEvents` was calling the Google Calendar API on every request, even for subsequent checks within the same conversation session. This caused significant latency and redundant API usage. By implementing a short-lived (5-minute) cache with a default fetch range (14 days), multiple queries (e.g., availability check -> slot proposal -> conflict check) can be served from memory.
 **Action:** Implement `eventsCache` in `CalendarService` with invalidation on write operations (`createEvent`, `createTask`). This reduces N API calls to 1 per 5 minutes for schedule-related queries, improving response time and reducing quota usage.
+
+## 2025-03-02 - Removing Dead Code in Database Queries
+**Learning:** Fetching data (`getMessagesForReport`) that is never used in the application layer wastes database I/O, memory, and CPU cycles.
+**Action:** Removed the unused `getMessagesForReport` database query from `CronService.generateAndSendReport()`. Always verify if data fetched from the database is actually consumed by downstream logic.
