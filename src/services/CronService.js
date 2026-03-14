@@ -68,9 +68,6 @@ export class CronService {
     
     // Récupérer les conversations groupées par contact (nouveau format)
     const conversations = this.#repo.getConversationsForReport();
-    
-    // Garder aussi les messages plats pour compatibilité
-    const messages = this.#repo.getMessagesForReport();
 
     // Récupérer le résumé de l'agenda si disponible
     let agendaSummary = null;
@@ -93,17 +90,17 @@ export class CronService {
       this.#lastReportData = result.raw;
     } else {
       // Fallback sans IA
-      report = this.#formatBasicReport(stats, messages);
+      report = this.#formatBasicReport(stats);
       this.#lastReportData = null;
     }
 
     await this.#telegram.sendMessage(report);
-    this.#logger.info('Report sent', { conversationsCount: conversations.length, messagesCount: messages.length });
+    this.#logger.info('Report sent', { conversationsCount: conversations.length, messagesCount: stats.received + stats.sent });
     
     return report;
   }
 
-  #formatBasicReport(stats, messages) {
+  #formatBasicReport(stats) {
     let report = `📊 <b>Rapport C.A.R.L.</b>\n\n`;
     report += `📈 <b>Statistiques:</b>\n`;
     report += `• Messages reçus: ${stats.received}\n`;
