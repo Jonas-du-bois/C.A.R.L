@@ -285,6 +285,38 @@ export class TelegramService {
   /**
    * Answer a callback query
    */
+  /**
+   * Sanitizes error messages to prevent secret leakage
+   * @param {Error|string} error
+   * @returns {Error|string}
+   */
+  #sanitizeError(error) {
+    if (!this.#botToken) return error;
+
+    // Escape botToken for regex just in case it contains special chars
+    const escapedToken = this.#botToken.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const tokenRegex = new RegExp(escapedToken, 'g');
+    const hiddenToken = '[HIDDEN_TOKEN]';
+
+    if (typeof error === 'string') {
+      return error.replace(tokenRegex, hiddenToken);
+    }
+
+    if (error instanceof Error) {
+      if (error.message) {
+        error.message = error.message.replace(tokenRegex, hiddenToken);
+      }
+      if (error.stack) {
+        error.stack = error.stack.replace(tokenRegex, hiddenToken);
+      }
+      if (error.cause) {
+        error.cause = this.#sanitizeError(error.cause);
+      }
+    }
+
+    return error;
+  }
+
   async answerCallback(callbackQueryId, text = null) {
     try {
       const url = `https://api.telegram.org/bot${this.#botToken}/answerCallbackQuery`;
@@ -298,7 +330,7 @@ export class TelegramService {
         })
       });
     } catch (error) {
-      console.error('Failed to answer callback:', error);
+      console.error('Failed to answer callback:', this.#sanitizeError(error));
     }
   }
 
@@ -388,10 +420,10 @@ export class TelegramService {
 
       if (!response.ok) {
         const error = await response.text();
-        console.error('Telegram API Error:', error);
+        console.error('Telegram API Error:', this.#sanitizeError(error));
       }
     } catch (error) {
-      console.error('Failed to send Telegram message:', error);
+      console.error('Failed to send Telegram message:', this.#sanitizeError(error));
     }
   }
 
@@ -420,12 +452,12 @@ export class TelegramService {
 
       if (!response.ok) {
         const error = await response.text();
-        console.error('Telegram API Error (QR):', error);
+        console.error('Telegram API Error (QR):', this.#sanitizeError(error));
       } else {
         console.log('QR Code sent to Telegram successfully');
       }
     } catch (error) {
-      console.error('Failed to send QR code to Telegram:', error);
+      console.error('Failed to send QR code to Telegram:', this.#sanitizeError(error));
     }
   }
 }
