@@ -195,6 +195,8 @@ export class SQLiteDatabase {
       CREATE INDEX IF NOT EXISTS idx_message_analysis_sentiment ON message_analysis(sentiment);
       CREATE INDEX IF NOT EXISTS idx_contacts_phone ON contacts(phone_number);
       CREATE INDEX IF NOT EXISTS idx_contacts_last_seen ON contacts(last_seen_at);
+      -- ⚡ Bolt: Generated expression index to optimize top contacts retrieval sorting
+      CREATE INDEX IF NOT EXISTS idx_contacts_total_msgs ON contacts ((total_messages_received + total_messages_sent) DESC);
       CREATE INDEX IF NOT EXISTS idx_conversations_contact_id ON conversations(contact_id);
       CREATE INDEX IF NOT EXISTS idx_conversations_status ON conversations(status);
       CREATE INDEX IF NOT EXISTS idx_daily_stats_date ON daily_stats(date);
