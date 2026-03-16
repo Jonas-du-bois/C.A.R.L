@@ -298,7 +298,7 @@ export class TelegramService {
         })
       });
     } catch (error) {
-      console.error('Failed to answer callback:', error);
+      console.error('Failed to answer callback:', this.#sanitizeError(error));
     }
   }
 
@@ -388,10 +388,10 @@ export class TelegramService {
 
       if (!response.ok) {
         const error = await response.text();
-        console.error('Telegram API Error:', error);
+        console.error('Telegram API Error:', this.#sanitizeError(error));
       }
     } catch (error) {
-      console.error('Failed to send Telegram message:', error);
+      console.error('Failed to send Telegram message:', this.#sanitizeError(error));
     }
   }
 
@@ -420,12 +420,48 @@ export class TelegramService {
 
       if (!response.ok) {
         const error = await response.text();
-        console.error('Telegram API Error (QR):', error);
+        console.error('Telegram API Error (QR):', this.#sanitizeError(error));
       } else {
         console.log('QR Code sent to Telegram successfully');
       }
     } catch (error) {
-      console.error('Failed to send QR code to Telegram:', error);
+      console.error('Failed to send QR code to Telegram:', this.#sanitizeError(error));
     }
   }
+
+  /**
+   * Prevents bot token from leaking in error messages or logs
+   * Modifies the error object in place to preserve custom properties
+   * @param {Error|string} error
+   * @returns {Error|string}
+   */
+  #sanitizeError(error) {
+    if (!this.#botToken || !error) return error;
+
+    // Regex escape function to safely handle tokens with special characters
+    const escapeRegExp = (string) => {
+      return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    };
+
+    const tokenRegex = new RegExp(escapeRegExp(this.#botToken), 'gi');
+
+    if (typeof error === 'string') {
+      return error.replace(tokenRegex, '[HIDDEN_TOKEN]');
+    }
+
+    if (error instanceof Error) {
+      if (error.message) {
+        error.message = error.message.replace(tokenRegex, '[HIDDEN_TOKEN]');
+      }
+      if (error.stack) {
+        error.stack = error.stack.replace(tokenRegex, '[HIDDEN_TOKEN]');
+      }
+      if (error.cause) {
+        error.cause = this.#sanitizeError(error.cause);
+      }
+    }
+
+    return error;
+  }
+
 }
