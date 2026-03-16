@@ -629,8 +629,9 @@ export class MessageRepository {
     return this.#db.prepare(`
       SELECT
         (SELECT COUNT(*) FROM contacts) as total_contacts,
-        (SELECT COUNT(*) FROM messages WHERE direction = 'incoming') as total_messages_received,
-        (SELECT COUNT(*) FROM messages WHERE direction = 'outgoing') as total_messages_sent,
+        -- ⚡ Bolt: Use pre-calculated stats in contacts table instead of full messages scan
+        (SELECT CAST(COALESCE(SUM(total_messages_received), 0) AS INTEGER) FROM contacts) as total_messages_received,
+        (SELECT CAST(COALESCE(SUM(total_messages_sent), 0) AS INTEGER) FROM contacts) as total_messages_sent,
         (SELECT COUNT(*) FROM message_analysis) as total_analyzed,
         (SELECT COUNT(*) FROM errors) as total_errors,
         (SELECT SUM(tokens_used) FROM message_analysis) as total_tokens_used
@@ -642,9 +643,10 @@ export class MessageRepository {
    */
   getTopContacts(limit = 10) {
     return this.#db.prepare(`
+      -- ⚡ Bolt: Read pre-calculated stats directly instead of using correlated subqueries
       SELECT c.*, 
-        (SELECT COUNT(*) FROM messages m WHERE m.contact_id = c.id AND m.direction = 'incoming') as messages_received,
-        (SELECT COUNT(*) FROM messages m WHERE m.contact_id = c.id AND m.direction = 'outgoing') as messages_sent
+        c.total_messages_received as messages_received,
+        c.total_messages_sent as messages_sent
       FROM contacts c
       ORDER BY (c.total_messages_received + c.total_messages_sent) DESC
       LIMIT ?
