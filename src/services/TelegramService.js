@@ -17,6 +17,39 @@ export class TelegramService {
   #pendingEvents = new Map();  // key: eventId -> { event, step, calendarId }
   #sessionCounter = 0;         // Compteur pour générer des IDs uniques
 
+  /**
+   * Recursively sanitizes an error or string to prevent botToken leakage
+   * @param {Error|string|any} error - The error or string to sanitize
+   * @returns {Error|string|any} The sanitized error or string
+   */
+  #sanitizeError(error) {
+    if (!error || !this.#botToken) return error;
+
+    const escapeRegExp = (string) => {
+      return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    };
+
+    const tokenPattern = new RegExp(escapeRegExp(this.#botToken), 'g');
+
+    if (typeof error === 'string') {
+      return error.replace(tokenPattern, '[HIDDEN_TOKEN]');
+    }
+
+    if (error instanceof Error) {
+      if (error.message) {
+        error.message = error.message.replace(tokenPattern, '[HIDDEN_TOKEN]');
+      }
+      if (error.stack) {
+        error.stack = error.stack.replace(tokenPattern, '[HIDDEN_TOKEN]');
+      }
+      if (error.cause) {
+        error.cause = this.#sanitizeError(error.cause);
+      }
+    }
+
+    return error;
+  }
+
   constructor(config) {
     this.#botToken = config.telegram.botToken;
     this.#adminId = config.telegram.adminId;
@@ -167,6 +200,7 @@ export class TelegramService {
         await this.#handleUpdate(update);
       }
     } catch (error) {
+      this.#sanitizeError(error);
       // Silently ignore polling errors
     } finally {
       this.#isPolling = false;
@@ -275,6 +309,7 @@ export class TelegramService {
           // Répondre au callback pour enlever le "loading"
           await this.answerCallback(callbackQuery.id);
         } catch (error) {
+          this.#sanitizeError(error);
           await this.answerCallback(callbackQuery.id, `❌ ${error.message}`);
         }
         return;
@@ -298,6 +333,7 @@ export class TelegramService {
         })
       });
     } catch (error) {
+      this.#sanitizeError(error);
       console.error('Failed to answer callback:', error);
     }
   }
@@ -387,10 +423,12 @@ export class TelegramService {
       });
 
       if (!response.ok) {
-        const error = await response.text();
-        console.error('Telegram API Error:', error);
+        const errorText = await response.text();
+        const sanitizedError = this.#sanitizeError(errorText);
+        console.error('Telegram API Error:', sanitizedError);
       }
     } catch (error) {
+      this.#sanitizeError(error);
       console.error('Failed to send Telegram message:', error);
     }
   }
@@ -419,12 +457,14 @@ export class TelegramService {
       });
 
       if (!response.ok) {
-        const error = await response.text();
-        console.error('Telegram API Error (QR):', error);
+        const errorText = await response.text();
+        const sanitizedError = this.#sanitizeError(errorText);
+        console.error('Telegram API Error (QR):', sanitizedError);
       } else {
         console.log('QR Code sent to Telegram successfully');
       }
     } catch (error) {
+      this.#sanitizeError(error);
       console.error('Failed to send QR code to Telegram:', error);
     }
   }
