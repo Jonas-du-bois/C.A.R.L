@@ -98,6 +98,31 @@ describe('MessageRepository Report Integration', () => {
     assert.strictEqual(aliceMsgs[1].body, 'Alice 2');
   });
 
+  it('should limit to top N contacts when limitContacts option is provided', () => {
+    const contact1 = repository.findOrCreateContact('user1@s.whatsapp.net', { pushName: 'Alice' });
+    const contact2 = repository.findOrCreateContact('user2@s.whatsapp.net', { pushName: 'Bob' });
+    const contact3 = repository.findOrCreateContact('user3@s.whatsapp.net', { pushName: 'Charlie' });
+    const now = Date.now();
+
+    // Bob (3)
+    repository.saveIncomingMessage(new Message({ id: 'b1', from: 'user2@s.whatsapp.net', body: '1', timestamp: now - 3000 }), contact2.id);
+    repository.saveIncomingMessage(new Message({ id: 'b2', from: 'user2@s.whatsapp.net', body: '2', timestamp: now - 2000 }), contact2.id);
+    repository.saveIncomingMessage(new Message({ id: 'b3', from: 'user2@s.whatsapp.net', body: '3', timestamp: now - 1000 }), contact2.id);
+
+    // Alice (2)
+    repository.saveIncomingMessage(new Message({ id: 'a1', from: 'user1@s.whatsapp.net', body: '1', timestamp: now - 5000 }), contact1.id);
+    repository.saveIncomingMessage(new Message({ id: 'a2', from: 'user1@s.whatsapp.net', body: '2', timestamp: now - 4000 }), contact1.id);
+
+    // Charlie (1)
+    repository.saveIncomingMessage(new Message({ id: 'c1', from: 'user3@s.whatsapp.net', body: '1', timestamp: now - 6000 }), contact3.id);
+
+    const report = repository.getConversationsForReport(20, { limitContacts: 2 });
+
+    assert.strictEqual(report.length, 2);
+    assert.strictEqual(report[0].phoneNumber, 'user2@s.whatsapp.net');
+    assert.strictEqual(report[1].phoneNumber, 'user1@s.whatsapp.net');
+  });
+
   it('should handle mixed incoming and outgoing messages', () => {
     const contact = repository.findOrCreateContact('user1@s.whatsapp.net', { pushName: 'Alice' });
     const now = Date.now();
