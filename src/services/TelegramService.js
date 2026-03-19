@@ -11,6 +11,51 @@ export class TelegramService {
   #callbackHandlers = new Map();
   #recentCommands = new Map();   // key: userId|messageId -> timestamp
   
+  /**
+   * Assure qu'aucune donnée sensible ne fuite dans les logs.
+   * Remplace l'API key par [HIDDEN_TOKEN] pour les strings et erreurs.
+   */
+  #sanitizeError(error) {
+    if (!error || !this.#botToken) return error;
+
+    const escapeRegex = (string) => string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const tokenRegex = new RegExp(escapeRegex(this.#botToken), 'g');
+    const replacement = '[HIDDEN_TOKEN]';
+
+    if (error instanceof Error) {
+      // Create a new Error to avoid mutating the original
+      const sanitized = new Error(error.message ? error.message.replace(tokenRegex, replacement) : '');
+      sanitized.name = error.name;
+
+      if (error.stack) {
+        sanitized.stack = error.stack.replace(tokenRegex, replacement);
+      }
+
+      if (error.cause) {
+        sanitized.cause = this.#sanitizeError(error.cause);
+      }
+
+      // Copy any other custom properties
+      for (const key of Object.keys(error)) {
+        if (key !== 'message' && key !== 'name' && key !== 'stack' && key !== 'cause') {
+          const val = error[key];
+          if (typeof val === 'string') {
+            sanitized[key] = val.replace(tokenRegex, replacement);
+          } else {
+            sanitized[key] = val; // We don't deep-clone generic objects for now
+          }
+        }
+      }
+      return sanitized;
+    }
+
+    if (typeof error === 'string') {
+      return error.replace(tokenRegex, replacement);
+    }
+
+    return error;
+  }
+
   // ============================================
   // SESSION STATE - Pour workflow interactif
   // ============================================
@@ -288,7 +333,7 @@ export class TelegramService {
   async answerCallback(callbackQueryId, text = null) {
     try {
       const url = `https://api.telegram.org/bot${this.#botToken}/answerCallbackQuery`;
-      await fetch(url, {
+      const response = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -297,8 +342,13 @@ export class TelegramService {
           show_alert: !!text
         })
       });
+
+      if (!response.ok) {
+        const errText = await response.text();
+        console.error('Failed to answer callback:', this.#sanitizeError(errText));
+      }
     } catch (error) {
-      console.error('Failed to answer callback:', error);
+      console.error('Failed to answer callback:', this.#sanitizeError(error));
     }
   }
 
@@ -388,10 +438,10 @@ export class TelegramService {
 
       if (!response.ok) {
         const error = await response.text();
-        console.error('Telegram API Error:', error);
+        console.error('Telegram API Error:', this.#sanitizeError(error));
       }
     } catch (error) {
-      console.error('Failed to send Telegram message:', error);
+      console.error('Failed to send Telegram message:', this.#sanitizeError(error));
     }
   }
 
@@ -420,12 +470,12 @@ export class TelegramService {
 
       if (!response.ok) {
         const error = await response.text();
-        console.error('Telegram API Error (QR):', error);
+        console.error('Telegram API Error (QR):', this.#sanitizeError(error));
       } else {
         console.log('QR Code sent to Telegram successfully');
       }
     } catch (error) {
-      console.error('Failed to send QR code to Telegram:', error);
+      console.error('Failed to send QR code to Telegram:', this.#sanitizeError(error));
     }
   }
 }
