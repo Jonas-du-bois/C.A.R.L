@@ -298,7 +298,7 @@ export class TelegramService {
         })
       });
     } catch (error) {
-      console.error('Failed to answer callback:', error);
+      console.error('Failed to answer callback:', this.#sanitizeError(error));
     }
   }
 
@@ -388,10 +388,10 @@ export class TelegramService {
 
       if (!response.ok) {
         const error = await response.text();
-        console.error('Telegram API Error:', error);
+        console.error('Telegram API Error:', this.#sanitizeError(error));
       }
     } catch (error) {
-      console.error('Failed to send Telegram message:', error);
+      console.error('Failed to send Telegram message:', this.#sanitizeError(error));
     }
   }
 
@@ -420,12 +420,59 @@ export class TelegramService {
 
       if (!response.ok) {
         const error = await response.text();
-        console.error('Telegram API Error (QR):', error);
+        console.error('Telegram API Error (QR):', this.#sanitizeError(error));
       } else {
         console.log('QR Code sent to Telegram successfully');
       }
     } catch (error) {
-      console.error('Failed to send QR code to Telegram:', error);
+      console.error('Failed to send QR code to Telegram:', this.#sanitizeError(error));
+    }
+  }
+
+  /**
+   * Sanitizes an error to prevent leakage of the bot token.
+   * Replaces occurrences of the token with [HIDDEN_TOKEN].
+   * @param {Error|string} error - The error to sanitize
+   * @returns {Error|string} The sanitized error
+   */
+  #sanitizeError(error) {
+    if (!error) return error;
+    if (!this.#botToken) return error;
+
+    // Create a safe regex pattern for the token
+    const tokenRegex = new RegExp(this.#botToken.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g');
+    const hiddenToken = '[HIDDEN_TOKEN]';
+
+    if (typeof error === 'string') {
+      return error.replace(tokenRegex, hiddenToken);
+    }
+
+    if (error instanceof Error) {
+      // Create a new Error object to avoid mutating the original
+      const sanitized = new Error(error.message.replace(tokenRegex, hiddenToken));
+
+      // Copy over custom properties
+      Object.assign(sanitized, error);
+
+      // Sanitize stack trace if it exists
+      if (error.stack) {
+        sanitized.stack = error.stack.replace(tokenRegex, hiddenToken);
+      }
+
+      // Recursively sanitize cause if it exists
+      if (error.cause) {
+        sanitized.cause = this.#sanitizeError(error.cause);
+      }
+
+      return sanitized;
+    }
+
+    // For other object types, try JSON stringification
+    try {
+      const str = JSON.stringify(error);
+      return JSON.parse(str.replace(tokenRegex, hiddenToken));
+    } catch (e) {
+      return error; // Fallback if it can't be stringified
     }
   }
 }
