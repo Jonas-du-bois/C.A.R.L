@@ -629,11 +629,11 @@ export class MessageRepository {
     return this.#db.prepare(`
       SELECT
         (SELECT COUNT(*) FROM contacts) as total_contacts,
-        (SELECT COUNT(*) FROM messages WHERE direction = 'incoming') as total_messages_received,
-        (SELECT COUNT(*) FROM messages WHERE direction = 'outgoing') as total_messages_sent,
+        (SELECT CAST(COALESCE(SUM(total_messages_received), 0) AS INTEGER) FROM contacts) as total_messages_received,
+        (SELECT CAST(COALESCE(SUM(total_messages_sent), 0) AS INTEGER) FROM contacts) as total_messages_sent,
         (SELECT COUNT(*) FROM message_analysis) as total_analyzed,
         (SELECT COUNT(*) FROM errors) as total_errors,
-        (SELECT SUM(tokens_used) FROM message_analysis) as total_tokens_used
+        (SELECT CAST(COALESCE(SUM(tokens_used), 0) AS INTEGER) FROM message_analysis) as total_tokens_used
     `).get();
   }
 
