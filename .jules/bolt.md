@@ -30,3 +30,7 @@
 ## 2026-03-02 - Caching External API Calls for Frequent Schedule Lookups
 **Learning:** `CalendarService.getUpcomingEvents` was calling the Google Calendar API on every request, even for subsequent checks within the same conversation session. This caused significant latency and redundant API usage. By implementing a short-lived (5-minute) cache with a default fetch range (14 days), multiple queries (e.g., availability check -> slot proposal -> conflict check) can be served from memory.
 **Action:** Implement `eventsCache` in `CalendarService` with invalidation on write operations (`createEvent`, `createTask`). This reduces N API calls to 1 per 5 minutes for schedule-related queries, improving response time and reducing quota usage.
+
+## 2026-03-03 - Optimizing Statistics Aggregations
+**Learning:** Multiple aggregate queries (like `COUNT` and `SUM`) against the same dataset using `GROUP BY` clauses cause redundant full-table or index scans, leading to significant database overhead and locking. Functions like `getQuickStats` and `generateDailyStats` executed 3-4 separate queries across the `messages` and `message_analysis` tables for a single time range.
+**Action:** Replaced multiple SQL aggregate queries with a single query that fetches raw data (`direction`, `category`, `urgency`, etc.) and performs the counts/grouping in JavaScript memory. This reduced DB roundtrips from 4 to 2 (or 6 to 3) per operation, minimizing lock contention and improving report generation performance.

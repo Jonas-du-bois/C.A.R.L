@@ -364,37 +364,14 @@ export class MessageRepository {
     const startOfDay = new Date(dateStr).setHours(0, 0, 0, 0);
     const endOfDay = new Date(dateStr).setHours(23, 59, 59, 999);
 
-    const stats = this.#db.prepare(`
-      SELECT
-        COUNT(CASE WHEN m.direction = 'incoming' THEN 1 END) as total_received,
-        COUNT(CASE WHEN m.direction = 'outgoing' THEN 1 END) as total_sent,
-        COUNT(DISTINCT m.contact_id) as unique_contacts
+    // ⚡ Bolt: Optimized to replace 4 separate SQL aggregation queries with a single query fetching raw data
+    // (direction, urgency, category, sentiment) and performing the aggregation in JavaScript.
+    // This minimizes database roundtrips and improves reporting performance.
+    const messagesData = this.#db.prepare(`
+      SELECT m.direction, m.contact_id, ma.urgency, ma.category, ma.sentiment
       FROM messages m
+      LEFT JOIN message_analysis ma ON m.id = ma.message_id
       WHERE m.received_at BETWEEN ? AND ?
-    `).get(startOfDay, endOfDay);
-
-    const byUrgency = this.#db.prepare(`
-      SELECT ma.urgency, COUNT(*) as count
-      FROM messages m
-      JOIN message_analysis ma ON m.id = ma.message_id
-      WHERE m.received_at BETWEEN ? AND ?
-      GROUP BY ma.urgency
-    `).all(startOfDay, endOfDay);
-
-    const byCategory = this.#db.prepare(`
-      SELECT ma.category, COUNT(*) as count
-      FROM messages m
-      JOIN message_analysis ma ON m.id = ma.message_id
-      WHERE m.received_at BETWEEN ? AND ?
-      GROUP BY ma.category
-    `).all(startOfDay, endOfDay);
-
-    const bySentiment = this.#db.prepare(`
-      SELECT ma.sentiment, COUNT(*) as count
-      FROM messages m
-      JOIN message_analysis ma ON m.id = ma.message_id
-      WHERE m.received_at BETWEEN ? AND ?
-      GROUP BY ma.sentiment
     `).all(startOfDay, endOfDay);
 
     const errors = this.#db.prepare(`
@@ -402,17 +379,46 @@ export class MessageRepository {
     `).get(startOfDay, endOfDay);
 
     const tokens = this.#db.prepare(`
-      SELECT SUM(tokens_used) as total FROM message_analysis WHERE analyzed_at BETWEEN ? AND ?
+      SELECT CAST(COALESCE(SUM(tokens_used), 0) AS INTEGER) as total FROM message_analysis WHERE analyzed_at BETWEEN ? AND ?
     `).get(startOfDay, endOfDay);
+
+    let total_received = 0;
+    let total_sent = 0;
+    const unique_contacts = new Set();
+    const by_urgency = {};
+    const by_category = {};
+    const by_sentiment = {};
+
+    for (const msg of messagesData) {
+      if (msg.direction === 'incoming') {
+        total_received++;
+      } else if (msg.direction === 'outgoing') {
+        total_sent++;
+      }
+
+      if (msg.contact_id) {
+        unique_contacts.add(msg.contact_id);
+      }
+
+      if (msg.urgency) {
+        by_urgency[msg.urgency] = (by_urgency[msg.urgency] || 0) + 1;
+      }
+      if (msg.category) {
+        by_category[msg.category] = (by_category[msg.category] || 0) + 1;
+      }
+      if (msg.sentiment) {
+        by_sentiment[msg.sentiment] = (by_sentiment[msg.sentiment] || 0) + 1;
+      }
+    }
 
     return {
       date: dateStr,
-      total_received: stats?.total_received || 0,
-      total_sent: stats?.total_sent || 0,
-      unique_contacts: stats?.unique_contacts || 0,
-      by_urgency: Object.fromEntries(byUrgency.map(r => [r.urgency, r.count])),
-      by_category: Object.fromEntries(byCategory.map(r => [r.category, r.count])),
-      by_sentiment: Object.fromEntries(bySentiment.map(r => [r.sentiment, r.count])),
+      total_received,
+      total_sent,
+      unique_contacts: unique_contacts.size,
+      by_urgency,
+      by_category,
+      by_sentiment,
       errors_count: errors?.count || 0,
       tokens_used: tokens?.total || 0
     };
@@ -578,40 +584,50 @@ export class MessageRepository {
   getQuickStats() {
     const since = this.#getMidnightTimestamp();
     
-    const totals = this.#db.prepare(`
-      SELECT 
-        COUNT(CASE WHEN direction = 'incoming' THEN 1 END) as received,
-        COUNT(CASE WHEN direction = 'outgoing' THEN 1 END) as sent,
-        COUNT(DISTINCT contact_id) as contacts
-      FROM messages WHERE received_at >= ?
-    `).get(since);
-
-    const byCategory = this.#db.prepare(`
-      SELECT ma.category, COUNT(*) as count
+    // ⚡ Bolt: Optimized to replace 3 separate SQL aggregation queries with a single query fetching raw data
+    // (direction, category, urgency) and performing the aggregation in JavaScript.
+    const messagesData = this.#db.prepare(`
+      SELECT m.direction, m.contact_id, ma.category, ma.urgency
       FROM messages m
-      JOIN message_analysis ma ON m.id = ma.message_id
+      LEFT JOIN message_analysis ma ON m.id = ma.message_id
       WHERE m.received_at >= ?
-      GROUP BY ma.category
-    `).all(since);
-
-    const byUrgency = this.#db.prepare(`
-      SELECT ma.urgency, COUNT(*) as count
-      FROM messages m
-      JOIN message_analysis ma ON m.id = ma.message_id
-      WHERE m.received_at >= ?
-      GROUP BY ma.urgency
     `).all(since);
 
     const errors = this.#db.prepare(`
       SELECT COUNT(*) as count FROM errors WHERE occurred_at >= ?
     `).get(since);
 
+    let received = 0;
+    let sent = 0;
+    const unique_contacts = new Set();
+    const byCategory = {};
+    const byUrgency = {};
+
+    for (const msg of messagesData) {
+      if (msg.direction === 'incoming') {
+        received++;
+      } else if (msg.direction === 'outgoing') {
+        sent++;
+      }
+
+      if (msg.contact_id) {
+        unique_contacts.add(msg.contact_id);
+      }
+
+      if (msg.category) {
+        byCategory[msg.category] = (byCategory[msg.category] || 0) + 1;
+      }
+      if (msg.urgency) {
+        byUrgency[msg.urgency] = (byUrgency[msg.urgency] || 0) + 1;
+      }
+    }
+
     return {
-      received: totals?.received || 0,
-      sent: totals?.sent || 0,
-      contacts: totals?.contacts || 0,
-      byCategory: Object.fromEntries(byCategory.map(r => [r.category, r.count])),
-      byUrgency: Object.fromEntries(byUrgency.map(r => [r.urgency, r.count])),
+      received,
+      sent,
+      contacts: unique_contacts.size,
+      byCategory,
+      byUrgency,
       errors: errors?.count || 0
     };
   }
