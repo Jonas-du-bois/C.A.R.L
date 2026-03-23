@@ -129,6 +129,14 @@ export class MessageRepository {
     `).get(messageId);
   }
 
+  /**
+   * Vérifie si un message existe déjà (Optimisé pour éviter de charger le contenu)
+   */
+  messageExists(messageId) {
+    // ⚡ Bolt: Optimized query for existence check. Avoids JOIN and loading large text columns.
+    return !!this.#db.prepare(`SELECT 1 FROM messages WHERE message_id = ?`).get(messageId);
+  }
+
   getMessageByInternalId(id) {
     return this.#db.prepare(`
       SELECT m.*, c.phone_number, c.push_name, c.display_name
