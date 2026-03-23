@@ -12,6 +12,57 @@ export class TelegramService {
   #recentCommands = new Map();   // key: userId|messageId -> timestamp
   
   // ============================================
+  // UTILITAIRES DE SECURITE
+  // ============================================
+
+  /**
+   * Sanitizes an error object or string to prevent bot token leakage
+   * @param {Error|string} error - The error to sanitize
+   * @returns {Error|string} Sanitized error
+   */
+  #sanitizeError(error) {
+    if (!this.#botToken) return error;
+
+    // Regex pour échapper les caractères spéciaux du token pour l'expression régulière
+    const escapedToken = this.#botToken.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const tokenRegex = new RegExp(escapedToken, 'g');
+    const HIDDEN_TOKEN = '[HIDDEN_TOKEN]';
+
+    if (typeof error === 'string') {
+      return error.replace(tokenRegex, HIDDEN_TOKEN);
+    }
+
+    if (error instanceof Error) {
+      // Create a new Error instance to avoid side effects
+      const newError = new Error(error.message.replace(tokenRegex, HIDDEN_TOKEN));
+      newError.name = error.name; // Preserve original error type name
+
+      if (error.stack) {
+        newError.stack = error.stack.replace(tokenRegex, HIDDEN_TOKEN);
+      }
+
+      if (error.cause) {
+        newError.cause = this.#sanitizeError(error.cause); // Reassign sanitized cause
+      }
+
+      // Copier les propriétés additionnelles
+      for (const key in error) {
+        if (key !== 'name' && key !== 'message' && key !== 'stack' && key !== 'cause') {
+          if (typeof error[key] === 'string') {
+            newError[key] = error[key].replace(tokenRegex, HIDDEN_TOKEN);
+          } else {
+            newError[key] = error[key];
+          }
+        }
+      }
+
+      return newError;
+    }
+
+    return error;
+  }
+
+  // ============================================
   // SESSION STATE - Pour workflow interactif
   // ============================================
   #pendingEvents = new Map();  // key: eventId -> { event, step, calendarId }
@@ -298,7 +349,7 @@ export class TelegramService {
         })
       });
     } catch (error) {
-      console.error('Failed to answer callback:', error);
+      console.error('Failed to answer callback:', this.#sanitizeError(error));
     }
   }
 
@@ -387,11 +438,11 @@ export class TelegramService {
       });
 
       if (!response.ok) {
-        const error = await response.text();
-        console.error('Telegram API Error:', error);
+        const errorText = await response.text();
+        console.error('Telegram API Error:', this.#sanitizeError(errorText));
       }
     } catch (error) {
-      console.error('Failed to send Telegram message:', error);
+      console.error('Failed to send Telegram message:', this.#sanitizeError(error));
     }
   }
 
@@ -419,13 +470,13 @@ export class TelegramService {
       });
 
       if (!response.ok) {
-        const error = await response.text();
-        console.error('Telegram API Error (QR):', error);
+        const errorText = await response.text();
+        console.error('Telegram API Error (QR):', this.#sanitizeError(errorText));
       } else {
         console.log('QR Code sent to Telegram successfully');
       }
     } catch (error) {
-      console.error('Failed to send QR code to Telegram:', error);
+      console.error('Failed to send QR code to Telegram:', this.#sanitizeError(error));
     }
   }
 }
