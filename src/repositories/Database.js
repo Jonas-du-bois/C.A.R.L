@@ -202,6 +202,8 @@ export class SQLiteDatabase {
       CREATE INDEX IF NOT EXISTS idx_errors_resolved ON errors(resolved);
       CREATE INDEX IF NOT EXISTS idx_actions_status ON actions(status);
       CREATE INDEX IF NOT EXISTS idx_responses_message_id ON responses(message_id);
+      -- ⚡ Bolt: Expression index to optimize getTopContacts sorting
+      CREATE INDEX IF NOT EXISTS idx_contacts_total_msgs ON contacts((total_messages_received + total_messages_sent) DESC);
     `);
 
     // Nettoyage des anciennes tables de migration

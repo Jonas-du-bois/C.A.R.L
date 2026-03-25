@@ -641,10 +641,12 @@ export class MessageRepository {
    * Top contacts par nombre de messages
    */
   getTopContacts(limit = 10) {
+    // ⚡ Bolt: Optimized to read directly from pre-calculated columns instead of correlated subqueries.
+    // The sorting is backed by the expression index idx_contacts_total_msgs on ((total_messages_received + total_messages_sent) DESC).
     return this.#db.prepare(`
       SELECT c.*, 
-        (SELECT COUNT(*) FROM messages m WHERE m.contact_id = c.id AND m.direction = 'incoming') as messages_received,
-        (SELECT COUNT(*) FROM messages m WHERE m.contact_id = c.id AND m.direction = 'outgoing') as messages_sent
+        c.total_messages_received as messages_received,
+        c.total_messages_sent as messages_sent
       FROM contacts c
       ORDER BY (c.total_messages_received + c.total_messages_sent) DESC
       LIMIT ?
