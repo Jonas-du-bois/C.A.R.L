@@ -489,11 +489,35 @@ export class MessageRepository {
    * Récupère les conversations groupées par contact pour le rapport IA
    * Inclut les messages entrants ET sortants pour donner le contexte complet
    * @param {number} maxMessagesPerContact - Limite de messages par contact (défaut: 20)
+   * @param {number|null} limitContacts - Limiter le nombre de contacts à remonter (les plus actifs)
    * @returns {Object} Conversations groupées par contact avec métadonnées
    */
-  getConversationsForReport(maxMessagesPerContact = 20) {
+  getConversationsForReport(maxMessagesPerContact = 20, limitContacts = null) {
     const since = this.#getMidnightTimestamp();
     
+    let queryArgs = [since];
+    let queryFilter = `WHERE m.received_at >= ?`;
+
+    // ⚡ Bolt: New optimization - if limitContacts is provided, only fetch messages for top active contacts
+    if (limitContacts) {
+      // First, get the IDs of the most active contacts today
+      const topContactRows = this.#db.prepare(`
+        SELECT contact_id
+        FROM messages
+        WHERE received_at >= ?
+        GROUP BY contact_id
+        ORDER BY COUNT(*) DESC
+        LIMIT ?
+      `).all(since, limitContacts);
+
+      if (topContactRows.length === 0) return [];
+
+      const topContactIds = topContactRows.map(r => r.contact_id);
+      const placeholders = topContactIds.map(() => '?').join(',');
+      queryFilter += ` AND m.contact_id IN (${placeholders})`;
+      queryArgs.push(...topContactIds);
+    }
+
     // Récupérer tous les messages (entrants ET sortants) de la journée
     // ⚡ Bolt: Optimized query to sort only by received_at (indexed) to avoid expensive file sort
     // Grouping by contact is handled in application logic
@@ -514,9 +538,9 @@ export class MessageRepository {
       FROM messages m
       JOIN contacts c ON m.contact_id = c.id
       LEFT JOIN message_analysis ma ON m.id = ma.message_id
-      WHERE m.received_at >= ?
+      ${queryFilter}
       ORDER BY m.received_at ASC
-    `).all(since);
+    `).all(...queryArgs);
 
     // Grouper par contact
     const conversations = {};
