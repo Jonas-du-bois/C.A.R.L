@@ -214,18 +214,18 @@ export class Application {
         // Ignorer ses propres messages et les statuts
         if (msg.fromMe || msg.isStatus) return;
 
+        // ⚡ Bolt: Éviter les doublons - vérifier si le message existe déjà AVANT
+        // l'appel asynchrone coûteux (IPC WhatsApp) et sans JOIN SQL lourd
+        if (messageRepo.messageExists(msg.id.id)) {
+          return; // Message déjà sauvegardé, ignorer silencieusement
+        }
+
         const chat = await this.#getChatSafe(msg);
         
         // Gestion des messages de groupe
         if (chat?.isGroup) {
           await this.#handleGroupMessage(msg, chat, messageRepo);
           return;
-        }
-
-        // Éviter les doublons - vérifier si le message existe déjà
-        const existingMessage = messageRepo.getMessageById(msg.id.id);
-        if (existingMessage) {
-          return; // Message déjà sauvegardé, ignorer silencieusement
         }
 
         const message = this.#createMessage(msg);
