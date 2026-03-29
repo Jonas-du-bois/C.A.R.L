@@ -120,6 +120,18 @@ export class MessageRepository {
     return result.lastInsertRowid;
   }
 
+  /**
+   * ⚡ Bolt: Lightweight check for message existence to avoid JOINs
+   * @param {string} messageId - L'ID WhatsApp du message
+   * @returns {boolean} - true si le message existe
+   */
+  messageExists(messageId) {
+    const result = this.#db.prepare(`
+      SELECT 1 FROM messages WHERE message_id = ?
+    `).get(messageId);
+    return !!result;
+  }
+
   getMessageById(messageId) {
     return this.#db.prepare(`
       SELECT m.*, c.phone_number, c.push_name, c.display_name
