@@ -298,7 +298,7 @@ export class TelegramService {
         })
       });
     } catch (error) {
-      console.error('Failed to answer callback:', error);
+      console.error('Failed to answer callback:', this.#sanitizeError(error));
     }
   }
 
@@ -388,10 +388,10 @@ export class TelegramService {
 
       if (!response.ok) {
         const error = await response.text();
-        console.error('Telegram API Error:', error);
+        console.error('Telegram API Error:', this.#sanitizeError(error));
       }
     } catch (error) {
-      console.error('Failed to send Telegram message:', error);
+      console.error('Failed to send Telegram message:', this.#sanitizeError(error));
     }
   }
 
@@ -420,12 +420,42 @@ export class TelegramService {
 
       if (!response.ok) {
         const error = await response.text();
-        console.error('Telegram API Error (QR):', error);
+        console.error('Telegram API Error (QR):', this.#sanitizeError(error));
       } else {
         console.log('QR Code sent to Telegram successfully');
       }
     } catch (error) {
-      console.error('Failed to send QR code to Telegram:', error);
+      console.error('Failed to send QR code to Telegram:', this.#sanitizeError(error));
     }
+  }
+
+  /**
+   * Sanitizes errors to prevent leaking sensitive information (like botToken) in logs
+   * @param {Error|string} error
+   * @returns {Error|string}
+   */
+  #sanitizeError(error) {
+    if (!this.#botToken) return error;
+
+    // Create a regex to match the token, escaping special characters just in case
+    const tokenRegex = new RegExp(this.#botToken.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g');
+
+    if (typeof error === 'string') {
+      return error.replace(tokenRegex, '[HIDDEN_TOKEN]');
+    }
+
+    if (error instanceof Error) {
+      const sanitizedError = new Error(error.message.replace(tokenRegex, '[HIDDEN_TOKEN]'));
+      sanitizedError.name = error.name;
+      if (error.stack) {
+        sanitizedError.stack = error.stack.replace(tokenRegex, '[HIDDEN_TOKEN]');
+      }
+      if (error.cause) {
+        sanitizedError.cause = this.#sanitizeError(error.cause);
+      }
+      return sanitizedError;
+    }
+
+    return error;
   }
 }
