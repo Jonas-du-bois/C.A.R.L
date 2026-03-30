@@ -30,3 +30,7 @@
 ## 2026-03-02 - Caching External API Calls for Frequent Schedule Lookups
 **Learning:** `CalendarService.getUpcomingEvents` was calling the Google Calendar API on every request, even for subsequent checks within the same conversation session. This caused significant latency and redundant API usage. By implementing a short-lived (5-minute) cache with a default fetch range (14 days), multiple queries (e.g., availability check -> slot proposal -> conflict check) can be served from memory.
 **Action:** Implement `eventsCache` in `CalendarService` with invalidation on write operations (`createEvent`, `createTask`). This reduces N API calls to 1 per 5 minutes for schedule-related queries, improving response time and reducing quota usage.
+
+## 2026-03-30 - Two-Step Query Optimization for Brief Reports
+**Learning:** `MessageRepository.getConversationsForReport` was fetching all messages for all contacts of the current day, even when the caller (`TelegramCommandHandler.#generateBriefReport`) only needed the top 5 most active contacts to display a preview. This caused unnecessary database I/O, object creation, and memory usage for large, active accounts.
+**Action:** Implemented a two-step query strategy via an optional `limitContacts` parameter. First, an optimized `GROUP BY` query finds the top N most active `contact_id`s. Second, the main query uses an `IN (...)` clause to fetch full details only for those specific contacts. This dramatically reduces the amount of data transferred and processed in memory for brief reports.
