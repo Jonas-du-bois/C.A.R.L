@@ -298,7 +298,7 @@ export class TelegramService {
         })
       });
     } catch (error) {
-      console.error('Failed to answer callback:', error);
+      console.error('Failed to answer callback:', this.#sanitizeError(error));
     }
   }
 
@@ -364,6 +364,69 @@ export class TelegramService {
     return parts;
   }
 
+  /**
+   * Assure la confidentialité en masquant le token dans les objets d'erreur
+   * @param {Error|string|any} error L'erreur à nettoyer
+   * @returns {Error|string|any} Une nouvelle erreur nettoyée
+   */
+  #sanitizeError(error) {
+    if (!error) return error;
+
+    const token = this.#botToken;
+    if (!token) return error;
+
+    // Échapper les caractères spéciaux du token pour l'utiliser dans RegExp
+    const escapedToken = token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const tokenRegex = new RegExp(escapedToken, 'g');
+    const replacement = '[HIDDEN_TOKEN]';
+
+    if (typeof error === 'string') {
+      return error.replace(tokenRegex, replacement);
+    }
+
+    if (error instanceof Error) {
+      // Créer une nouvelle instance d'Error pour éviter les effets de bord
+      const sanitized = new Error(error.message.replace(tokenRegex, replacement));
+      sanitized.name = error.name;
+
+      if (error.stack) {
+        sanitized.stack = error.stack.replace(tokenRegex, replacement);
+      }
+
+      if (error.cause) {
+        sanitized.cause = this.#sanitizeError(error.cause);
+      }
+
+      // Copier et nettoyer les propriétés personnalisées
+      for (const [key, value] of Object.entries(error)) {
+        if (typeof value === 'string') {
+          sanitized[key] = value.replace(tokenRegex, replacement);
+        } else if (value instanceof Error) {
+          sanitized[key] = this.#sanitizeError(value);
+        } else {
+          sanitized[key] = value;
+        }
+      }
+
+      return sanitized;
+    }
+
+    // Traitement pour les objets normaux s'ils sont rejetés
+    if (typeof error === 'object') {
+      const sanitizedObj = { ...error };
+      for (const [key, value] of Object.entries(sanitizedObj)) {
+        if (typeof value === 'string') {
+          sanitizedObj[key] = value.replace(tokenRegex, replacement);
+        } else if (value instanceof Error) {
+          sanitizedObj[key] = this.#sanitizeError(value);
+        }
+      }
+      return sanitizedObj;
+    }
+
+    return error;
+  }
+
   async #sendSingleMessage(message, options = {}) {
     try {
       const url = `https://api.telegram.org/bot${this.#botToken}/sendMessage`;
@@ -388,10 +451,10 @@ export class TelegramService {
 
       if (!response.ok) {
         const error = await response.text();
-        console.error('Telegram API Error:', error);
+        console.error('Telegram API Error:', this.#sanitizeError(error));
       }
     } catch (error) {
-      console.error('Failed to send Telegram message:', error);
+      console.error('Failed to send Telegram message:', this.#sanitizeError(error));
     }
   }
 
@@ -420,12 +483,12 @@ export class TelegramService {
 
       if (!response.ok) {
         const error = await response.text();
-        console.error('Telegram API Error (QR):', error);
+        console.error('Telegram API Error (QR):', this.#sanitizeError(error));
       } else {
         console.log('QR Code sent to Telegram successfully');
       }
     } catch (error) {
-      console.error('Failed to send QR code to Telegram:', error);
+      console.error('Failed to send QR code to Telegram:', this.#sanitizeError(error));
     }
   }
 }
