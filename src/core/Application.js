@@ -214,18 +214,18 @@ export class Application {
         // Ignorer ses propres messages et les statuts
         if (msg.fromMe || msg.isStatus) return;
 
+        // Éviter les doublons de manière efficace AVANT les appels IPC lourds
+        // ⚡ Bolt: Use lightweight messageExists instead of fetching full message
+        if (messageRepo.messageExists(msg.id.id)) {
+          return; // Message déjà sauvegardé, ignorer silencieusement
+        }
+
         const chat = await this.#getChatSafe(msg);
         
         // Gestion des messages de groupe
         if (chat?.isGroup) {
           await this.#handleGroupMessage(msg, chat, messageRepo);
           return;
-        }
-
-        // Éviter les doublons - vérifier si le message existe déjà
-        const existingMessage = messageRepo.getMessageById(msg.id.id);
-        if (existingMessage) {
-          return; // Message déjà sauvegardé, ignorer silencieusement
         }
 
         const message = this.#createMessage(msg);
@@ -266,14 +266,14 @@ export class Application {
         // Ignorer les statuts WhatsApp
         if (msg.isStatus) return;
 
-        const chat = await this.#getChatSafe(msg);
-        if (chat?.isGroup) return;
-
-        // Éviter les doublons - vérifier si le message existe déjà
-        const existingMessage = messageRepo.getMessageById(msg.id.id);
-        if (existingMessage) {
+        // Éviter les doublons de manière efficace AVANT les appels IPC lourds
+        // ⚡ Bolt: Use lightweight messageExists instead of fetching full message
+        if (messageRepo.messageExists(msg.id.id)) {
           return; // Message déjà sauvegardé, ignorer silencieusement
         }
+
+        const chat = await this.#getChatSafe(msg);
+        if (chat?.isGroup) return;
 
         const contact = messageRepo.findOrCreateContact(msg.to, {
           pushName: chat?.name || null,

@@ -79,6 +79,19 @@ export class MessageRepository {
   // ============================================
 
   /**
+   * Vérifie rapidement si un message existe déjà par son ID
+   * ⚡ Bolt: Lightweight check avoiding full data fetch and JOINs for duplicate detection
+   * @param {string} messageId
+   * @returns {boolean}
+   */
+  messageExists(messageId) {
+    const result = this.#db.prepare(`
+      SELECT 1 FROM messages WHERE message_id = ?
+    `).get(messageId);
+    return !!result;
+  }
+
+  /**
    * Sauvegarde un message entrant AVANT le traitement IA
    */
   saveIncomingMessage(message, contactId, metadata = {}) {
