@@ -12,6 +12,11 @@ export class GatekeeperHandler {
   }
 
   shouldProcess(message) {
+    // SECURITY: Maximum message body length to prevent DoS via massive payloads
+    if (message.body && message.body.length > 4096) {
+      return false;
+    }
+
     const now = this.#now();
     const timestamps = this.#userTimestamps.get(message.from) || [];
 
