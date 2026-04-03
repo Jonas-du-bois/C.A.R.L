@@ -30,3 +30,7 @@
 ## 2026-03-02 - Caching External API Calls for Frequent Schedule Lookups
 **Learning:** `CalendarService.getUpcomingEvents` was calling the Google Calendar API on every request, even for subsequent checks within the same conversation session. This caused significant latency and redundant API usage. By implementing a short-lived (5-minute) cache with a default fetch range (14 days), multiple queries (e.g., availability check -> slot proposal -> conflict check) can be served from memory.
 **Action:** Implement `eventsCache` in `CalendarService` with invalidation on write operations (`createEvent`, `createTask`). This reduces N API calls to 1 per 5 minutes for schedule-related queries, improving response time and reducing quota usage.
+
+## 2026-03-03 - Fast Duplicate Checks Before IPC
+**Learning:** In the WhatsApp event handlers (`message` and `message_create`), the application was calling `await msg.getChat()` *before* checking if the message was already processed. The `getChat()` function in `whatsapp-web.js` makes an asynchronous IPC call to the Chromium instance. Since duplicate events are common (e.g., when the client reconnects), performing an expensive async IPC call on known duplicates created unnecessary overhead and latency.
+**Action:** Implemented a lightweight `messageExists(messageId)` method in `MessageRepository` (`SELECT 1 FROM messages WHERE message_id = ?`). The handlers now call this synchronous, lightweight query *before* `await this.#getChatSafe(msg)`, immediately discarding duplicates and saving the IPC roundtrip.

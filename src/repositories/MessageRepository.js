@@ -129,6 +129,14 @@ export class MessageRepository {
     `).get(messageId);
   }
 
+  /**
+   * Lightweight check if a message exists by ID
+   * ⚡ Bolt: Used for fast duplicate checks before expensive operations
+   */
+  messageExists(messageId) {
+    return this.#db.prepare(`SELECT 1 FROM messages WHERE message_id = ?`).get(messageId) !== undefined;
+  }
+
   getMessageByInternalId(id) {
     return this.#db.prepare(`
       SELECT m.*, c.phone_number, c.push_name, c.display_name
