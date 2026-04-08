@@ -167,7 +167,10 @@ export class TelegramService {
         await this.#handleUpdate(update);
       }
     } catch (error) {
-      // Silently ignore polling errors
+      // Silently ignore polling errors in production
+      if (process.env.NODE_ENV === 'development') {
+        console.error('Polling error:', this.#sanitizeError(error));
+      }
     } finally {
       this.#isPolling = false;
     }
@@ -298,7 +301,7 @@ export class TelegramService {
         })
       });
     } catch (error) {
-      console.error('Failed to answer callback:', error);
+      console.error('Failed to answer callback:', this.#sanitizeError(error));
     }
   }
 
@@ -388,10 +391,10 @@ export class TelegramService {
 
       if (!response.ok) {
         const error = await response.text();
-        console.error('Telegram API Error:', error);
+        console.error('Telegram API Error:', this.#sanitizeError(error));
       }
     } catch (error) {
-      console.error('Failed to send Telegram message:', error);
+      console.error('Failed to send Telegram message:', this.#sanitizeError(error));
     }
   }
 
@@ -420,12 +423,49 @@ export class TelegramService {
 
       if (!response.ok) {
         const error = await response.text();
-        console.error('Telegram API Error (QR):', error);
+        console.error('Telegram API Error (QR):', this.#sanitizeError(error));
       } else {
         console.log('QR Code sent to Telegram successfully');
       }
     } catch (error) {
-      console.error('Failed to send QR code to Telegram:', error);
+      console.error('Failed to send QR code to Telegram:', this.#sanitizeError(error));
     }
+  }
+
+  /**
+   * Sanitizes errors to prevent leakage of the bot token.
+   * Standard HTTP clients like `fetch` include the full URL in network errors.
+   */
+  #sanitizeError(error) {
+    if (!this.#botToken) return error;
+
+    const escapedToken = this.#botToken.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const tokenRegex = new RegExp(escapedToken, 'g');
+
+    const sanitizeString = (str) => {
+      if (typeof str !== 'string') return str;
+      return str.replace(tokenRegex, '[HIDDEN_TOKEN]');
+    };
+
+    if (error instanceof Error) {
+      const newError = new Error(sanitizeString(error.message));
+      newError.name = error.name;
+      if (error.stack) newError.stack = sanitizeString(error.stack);
+      if (error.cause) newError.cause = this.#sanitizeError(error.cause);
+
+      // Copy custom properties if any
+      for (const key in error) {
+        if (Object.prototype.hasOwnProperty.call(error, key) && !['name', 'message', 'stack', 'cause'].includes(key)) {
+          newError[key] = typeof error[key] === 'string' ? sanitizeString(error[key]) : error[key];
+        }
+      }
+      return newError;
+    }
+
+    if (typeof error === 'string') {
+      return sanitizeString(error);
+    }
+
+    return error;
   }
 }
