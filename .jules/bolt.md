@@ -30,3 +30,7 @@
 ## 2026-03-02 - Caching External API Calls for Frequent Schedule Lookups
 **Learning:** `CalendarService.getUpcomingEvents` was calling the Google Calendar API on every request, even for subsequent checks within the same conversation session. This caused significant latency and redundant API usage. By implementing a short-lived (5-minute) cache with a default fetch range (14 days), multiple queries (e.g., availability check -> slot proposal -> conflict check) can be served from memory.
 **Action:** Implement `eventsCache` in `CalendarService` with invalidation on write operations (`createEvent`, `createTask`). This reduces N API calls to 1 per 5 minutes for schedule-related queries, improving response time and reducing quota usage.
+
+## 2026-03-05 - Grouped Query Optimization with IN Clause
+**Learning:** Fetching a massive dataset and doing a grouping operation in memory is significantly slower than first fetching the top N active items via a grouped query, then filtering the massive dataset via an `IN` clause. In `getConversationsForReport`, the original query fetched all messages for the day (potentially tens of thousands) just to pick the top 5 contacts for a brief report.
+**Action:** When a method needs data for only the "top N" items of a large dataset, use a two-step approach: Step 1) Get the IDs of the top N items using a lightweight aggregated query. Step 2) Fetch the full data payload filtered by those IDs. This reduces the number of joined rows fetched by orders of magnitude.
