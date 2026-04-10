@@ -130,4 +130,38 @@ describe('MessageRepository Report Integration', () => {
     assert.strictEqual(msgs[2].body, 'How are you?');
     assert.strictEqual(msgs[2].direction, 'incoming');
   });
+
+  describe('getConversationsForReport limitContacts optimization', () => {
+    it('should limit to top N contacts when limitContacts is provided', () => {
+      const now = Date.now();
+
+      // Create 3 contacts
+      const contact1 = repository.findOrCreateContact('c1@s.whatsapp.net', { pushName: 'C1' });
+      const contact2 = repository.findOrCreateContact('c2@s.whatsapp.net', { pushName: 'C2' });
+      const contact3 = repository.findOrCreateContact('c3@s.whatsapp.net', { pushName: 'C3' });
+
+      // C1 has 3 messages
+      for (let i = 0; i < 3; i++) {
+        const msg = new Message({ id: `c1-m${i}`, from: 'c1@s.whatsapp.net', body: `M${i}`, timestamp: now });
+        repository.saveIncomingMessage(msg, contact1.id);
+      }
+
+      // C2 has 2 messages
+      for (let i = 0; i < 2; i++) {
+        const msg = new Message({ id: `c2-m${i}`, from: 'c2@s.whatsapp.net', body: `M${i}`, timestamp: now });
+        repository.saveIncomingMessage(msg, contact2.id);
+      }
+
+      // C3 has 1 message
+      const msg = new Message({ id: 'c3-m1', from: 'c3@s.whatsapp.net', body: 'M', timestamp: now });
+      repository.saveIncomingMessage(msg, contact3.id);
+
+      // Get top 2 active contacts
+      const conversations = repository.getConversationsForReport(20, 2);
+
+      assert.strictEqual(conversations.length, 2);
+      assert.strictEqual(conversations[0].phoneNumber, 'c1@s.whatsapp.net'); // Most active
+      assert.strictEqual(conversations[1].phoneNumber, 'c2@s.whatsapp.net'); // 2nd most active
+    });
+  });
 });
