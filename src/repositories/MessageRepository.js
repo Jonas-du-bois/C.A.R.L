@@ -489,15 +489,34 @@ export class MessageRepository {
    * Récupère les conversations groupées par contact pour le rapport IA
    * Inclut les messages entrants ET sortants pour donner le contexte complet
    * @param {number} maxMessagesPerContact - Limite de messages par contact (défaut: 20)
+   * @param {number} limitContacts - Limite de contacts les plus actifs à inclure
    * @returns {Object} Conversations groupées par contact avec métadonnées
    */
-  getConversationsForReport(maxMessagesPerContact = 20) {
+  getConversationsForReport(maxMessagesPerContact = 20, limitContacts = undefined) {
     const since = this.#getMidnightTimestamp();
     
-    // Récupérer tous les messages (entrants ET sortants) de la journée
-    // ⚡ Bolt: Optimized query to sort only by received_at (indexed) to avoid expensive file sort
-    // Grouping by contact is handled in application logic
-    const allMessages = this.#db.prepare(`
+    let targetContactIds = null;
+
+    // ⚡ Bolt: Two-step query optimization for limitContacts
+    // If a limit is provided, first aggregate the top most active contact IDs
+    // to avoid fetching full message details for thousands of irrelevant contacts
+    if (limitContacts) {
+      const topContactRows = this.#db.prepare(`
+        SELECT contact_id
+        FROM messages
+        WHERE received_at >= ?
+        GROUP BY contact_id
+        ORDER BY COUNT(*) DESC
+        LIMIT ?
+      `).all(since, limitContacts);
+
+      targetContactIds = topContactRows.map(r => r.contact_id);
+
+      // If there are no contacts active today, return empty early
+      if (targetContactIds.length === 0) return [];
+    }
+
+    let queryStr = `
       SELECT 
         m.id,
         m.body,
@@ -515,8 +534,22 @@ export class MessageRepository {
       JOIN contacts c ON m.contact_id = c.id
       LEFT JOIN message_analysis ma ON m.id = ma.message_id
       WHERE m.received_at >= ?
-      ORDER BY m.received_at ASC
-    `).all(since);
+    `;
+
+    let params = [since];
+
+    if (targetContactIds) {
+      const placeholders = targetContactIds.map(() => '?').join(',');
+      queryStr += ` AND m.contact_id IN (${placeholders})`;
+      params.push(...targetContactIds);
+    }
+
+    queryStr += ` ORDER BY m.received_at ASC`;
+
+    // Récupérer tous les messages (entrants ET sortants) de la journée
+    // ⚡ Bolt: Optimized query to sort only by received_at (indexed) to avoid expensive file sort
+    // Grouping by contact is handled in application logic
+    const allMessages = this.#db.prepare(queryStr).all(...params);
 
     // Grouper par contact
     const conversations = {};
