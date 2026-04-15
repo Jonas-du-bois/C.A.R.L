@@ -489,15 +489,40 @@ export class MessageRepository {
    * Récupère les conversations groupées par contact pour le rapport IA
    * Inclut les messages entrants ET sortants pour donner le contexte complet
    * @param {number} maxMessagesPerContact - Limite de messages par contact (défaut: 20)
+   * @param {number|undefined} limitContacts - Limite le nombre de contacts à inclure dans le rapport
    * @returns {Object} Conversations groupées par contact avec métadonnées
    */
-  getConversationsForReport(maxMessagesPerContact = 20) {
+  getConversationsForReport(maxMessagesPerContact = 20, limitContacts = undefined) {
     const since = this.#getMidnightTimestamp();
     
+    // ⚡ Bolt: 2026-03-03 - Two-step query optimization for reports
+    // If limitContacts is specified, first get the top N active contact IDs.
+    // This avoids fetching, joining, and iterating over thousands of messages
+    // from inactive contacts when the caller only needs the top few.
+    let targetContactIds = null;
+
+    if (limitContacts) {
+      const topContacts = this.#db.prepare(`
+        SELECT contact_id
+        FROM messages
+        WHERE received_at >= ?
+        GROUP BY contact_id
+        ORDER BY COUNT(*) DESC
+        LIMIT ?
+      `).all(since, limitContacts);
+
+      targetContactIds = topContacts.map(c => c.contact_id);
+
+      // If there are no contacts with messages today, we can return early
+      if (targetContactIds.length === 0) {
+        return [];
+      }
+    }
+
     // Récupérer tous les messages (entrants ET sortants) de la journée
     // ⚡ Bolt: Optimized query to sort only by received_at (indexed) to avoid expensive file sort
     // Grouping by contact is handled in application logic
-    const allMessages = this.#db.prepare(`
+    let query = `
       SELECT 
         m.id,
         m.body,
@@ -515,8 +540,20 @@ export class MessageRepository {
       JOIN contacts c ON m.contact_id = c.id
       LEFT JOIN message_analysis ma ON m.id = ma.message_id
       WHERE m.received_at >= ?
-      ORDER BY m.received_at ASC
-    `).all(since);
+    `;
+
+    const params = [since];
+
+    if (targetContactIds) {
+      // Create ?,?,? string of correct length
+      const placeholders = targetContactIds.map(() => '?').join(',');
+      query += ` AND m.contact_id IN (${placeholders})`;
+      params.push(...targetContactIds);
+    }
+
+    query += ` ORDER BY m.received_at ASC`;
+
+    const allMessages = this.#db.prepare(query).all(...params);
 
     // Grouper par contact
     const conversations = {};
