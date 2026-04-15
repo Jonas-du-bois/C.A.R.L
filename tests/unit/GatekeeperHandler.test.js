@@ -47,6 +47,23 @@ describe('GatekeeperHandler', () => {
       assert.strictEqual(gatekeeper.shouldProcess(user2), false);
     });
 
+    it('should block messages with a body larger than 4096 characters', () => {
+      const longBody = 'a'.repeat(4097);
+      const message = { from: 'user1@s.whatsapp.net', body: longBody };
+      assert.strictEqual(gatekeeper.shouldProcess(message), false);
+    });
+
+    it('should gracefully handle messages without a body property', () => {
+      const message = { from: 'user1@s.whatsapp.net' };
+      assert.strictEqual(gatekeeper.shouldProcess(message), true);
+    });
+
+    it('should allow messages with a body exactly 4096 characters long', () => {
+      const longBody = 'a'.repeat(4096);
+      const message = { from: 'user1@s.whatsapp.net', body: longBody };
+      assert.strictEqual(gatekeeper.shouldProcess(message), true);
+    });
+
     it('should block when rate limit of 5 messages per minute is exceeded', async () => {
       const message = { from: 'user1@s.whatsapp.net' };
       
