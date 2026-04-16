@@ -120,6 +120,15 @@ export class MessageRepository {
     return result.lastInsertRowid;
   }
 
+  /**
+   * Vérifie si un message existe (Optimisé pour les vérifications rapides)
+   * ⚡ Bolt: Uses SELECT 1 to avoid fetching full rows and JOINs
+   */
+  messageExists(messageId) {
+    const row = this.#db.prepare(`SELECT 1 FROM messages WHERE message_id = ?`).get(messageId);
+    return !!row;
+  }
+
   getMessageById(messageId) {
     return this.#db.prepare(`
       SELECT m.*, c.phone_number, c.push_name, c.display_name

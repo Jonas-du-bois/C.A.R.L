@@ -30,3 +30,7 @@
 ## 2026-03-02 - Caching External API Calls for Frequent Schedule Lookups
 **Learning:** `CalendarService.getUpcomingEvents` was calling the Google Calendar API on every request, even for subsequent checks within the same conversation session. This caused significant latency and redundant API usage. By implementing a short-lived (5-minute) cache with a default fetch range (14 days), multiple queries (e.g., availability check -> slot proposal -> conflict check) can be served from memory.
 **Action:** Implement `eventsCache` in `CalendarService` with invalidation on write operations (`createEvent`, `createTask`). This reduces N API calls to 1 per 5 minutes for schedule-related queries, improving response time and reducing quota usage.
+
+## 2026-03-03 - Use Lightweight SELECT 1 for Existence Checks
+**Learning:** `Application.js` was using `MessageRepository.getMessageById` (which fetches full row data and performs a JOIN with `contacts`) just to check if a message already existed to prevent duplicates. This causes unnecessary overhead in the hot path.
+**Action:** Added `MessageRepository.messageExists` using a lightweight `SELECT 1 FROM messages WHERE message_id = ?` query. Always use lightweight `SELECT 1` queries when only checking for existence instead of fetching full entities.
