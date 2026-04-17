@@ -27,3 +27,8 @@
 **Vulnerability:** Denial of Service (DoS) via memory exhaustion in `GatekeeperHandler`. The handler stored user timestamps in an unbounded `Map` without cleanup, allowing an attacker to exhaust server memory by sending messages from many unique identifiers.
 **Learning:** Any stateful mechanism tracking user activity (like rate limits) must implement a cleanup strategy (TTL or periodic purge) to prevent unbounded growth.
 **Prevention:** Implemented a periodic `cleanup()` task in `GatekeeperHandler` that removes users with no recent activity every 5 minutes.
+
+## 2025-05-29 - Massive Payload DoS
+**Vulnerability:** `GatekeeperHandler` processed rate limits before validating the message body size. An attacker could send massive payloads (e.g., multimegabyte strings) that bypass downstream processing restrictions but consume memory and CPU resources just by being held in memory during the rate limit check and propagation.
+**Learning:** Payload size enforcement must happen at the very edge of the application, before any stateful logic or expensive operations are executed.
+**Prevention:** Implemented a strict 4096-character limit check at the beginning of `GatekeeperHandler.shouldProcess`.

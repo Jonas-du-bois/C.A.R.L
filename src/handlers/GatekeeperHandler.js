@@ -12,6 +12,11 @@ export class GatekeeperHandler {
   }
 
   shouldProcess(message) {
+    // 🛡️ Sentinel: Prevent DoS via massive payloads by strictly enforcing length limit at the edge
+    if (message.body && message.body.length > 4096) {
+      return false;
+    }
+
     const now = this.#now();
     const timestamps = this.#userTimestamps.get(message.from) || [];
 
