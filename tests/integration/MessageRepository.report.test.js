@@ -130,4 +130,53 @@ describe('MessageRepository Report Integration', () => {
     assert.strictEqual(msgs[2].body, 'How are you?');
     assert.strictEqual(msgs[2].direction, 'incoming');
   });
+
+  it('should limit contacts when limitContacts is provided', () => {
+    const contact1 = repository.findOrCreateContact('user1@s.whatsapp.net', { pushName: 'Alice' });
+    const contact2 = repository.findOrCreateContact('user2@s.whatsapp.net', { pushName: 'Bob' });
+    const contact3 = repository.findOrCreateContact('user3@s.whatsapp.net', { pushName: 'Charlie' });
+    const contact4 = repository.findOrCreateContact('user4@s.whatsapp.net', { pushName: 'Dave' });
+
+    const now = Date.now();
+    const messages = [
+      // Bob: 4 msgs
+      { contact: contact2, body: 'Bob 1', time: now - 8000 },
+      { contact: contact2, body: 'Bob 2', time: now - 7000 },
+      { contact: contact2, body: 'Bob 3', time: now - 6000 },
+      { contact: contact2, body: 'Bob 4', time: now - 5000 },
+
+      // Charlie: 3 msgs
+      { contact: contact3, body: 'Charlie 1', time: now - 4000 },
+      { contact: contact3, body: 'Charlie 2', time: now - 3000 },
+      { contact: contact3, body: 'Charlie 3', time: now - 2000 },
+
+      // Alice: 2 msgs
+      { contact: contact1, body: 'Alice 1', time: now - 1500 },
+      { contact: contact1, body: 'Alice 2', time: now - 1000 },
+
+      // Dave: 1 msg
+      { contact: contact4, body: 'Dave 1', time: now - 500 },
+    ];
+
+    for (const m of messages) {
+      repository.saveIncomingMessage(new Message({
+        id: `msg-${Math.random()}`,
+        from: m.contact.phone_number,
+        body: m.body,
+        timestamp: m.time
+      }), m.contact.id);
+    }
+
+    // Limit to top 2 contacts
+    const report = repository.getConversationsForReport(20, 2);
+
+    assert.strictEqual(report.length, 2);
+
+    // Should be Bob (4) and Charlie (3)
+    assert.strictEqual(report[0].phoneNumber, 'user2@s.whatsapp.net');
+    assert.strictEqual(report[0].messages.length, 4);
+
+    assert.strictEqual(report[1].phoneNumber, 'user3@s.whatsapp.net');
+    assert.strictEqual(report[1].messages.length, 3);
+  });
 });
