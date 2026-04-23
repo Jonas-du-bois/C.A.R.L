@@ -10,6 +10,11 @@ describe('GatekeeperHandler', () => {
   });
 
   describe('shouldProcess', () => {
+    it('should block messages with a body longer than 4096 characters', () => {
+      const message = { from: 'user1@s.whatsapp.net', body: 'A'.repeat(4097) };
+      assert.strictEqual(gatekeeper.shouldProcess(message), false);
+    });
+
     it('should allow first message from a sender', () => {
       const message = { from: 'user1@s.whatsapp.net' };
       assert.strictEqual(gatekeeper.shouldProcess(message), true);
