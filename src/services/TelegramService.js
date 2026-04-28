@@ -144,6 +144,56 @@ export class TelegramService {
 
   #isPolling = false;  // Flag pour éviter les appels concurrents
 
+  /**
+   * Sanitizes an error or string to prevent bot token leakage in logs
+   */
+  #sanitizeError(error) {
+    if (!this.#botToken || !error) return error;
+
+    // Escape special characters in the token for use in regex
+    const escapedToken = this.#botToken.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const tokenRegex = new RegExp(escapedToken, 'g');
+    const replacement = '[HIDDEN_TOKEN]';
+
+    if (typeof error === 'string') {
+      return error.replace(tokenRegex, replacement);
+    }
+
+    if (error instanceof Error) {
+      const messageArgs = error.message ? { cause: error.cause } : undefined;
+      let newError;
+
+      if (error.message) {
+        newError = new Error(error.message.replace(tokenRegex, replacement), messageArgs);
+      } else {
+        newError = new Error('', messageArgs);
+      }
+
+      newError.name = error.name;
+
+      if (error.stack) {
+        newError.stack = error.stack.replace(tokenRegex, replacement);
+      }
+
+      if (error.cause) {
+        newError.cause = this.#sanitizeError(error.cause);
+      }
+
+      // Copy custom properties
+      for (const key of Object.keys(error)) {
+        if (key !== 'message' && key !== 'name' && key !== 'stack' && key !== 'cause') {
+          newError[key] = typeof error[key] === 'string'
+            ? error[key].replace(tokenRegex, replacement)
+            : error[key];
+        }
+      }
+
+      return newError;
+    }
+
+    return error;
+  }
+
   async #pollUpdates() {
     // Éviter les appels concurrents au polling
     if (this.#isPolling) return;
@@ -167,7 +217,9 @@ export class TelegramService {
         await this.#handleUpdate(update);
       }
     } catch (error) {
-      // Silently ignore polling errors
+      if (process.env.NODE_ENV === 'development') {
+        console.error('[TelegramService] Polling error:', this.#sanitizeError(error));
+      }
     } finally {
       this.#isPolling = false;
     }
@@ -298,7 +350,7 @@ export class TelegramService {
         })
       });
     } catch (error) {
-      console.error('Failed to answer callback:', error);
+      console.error('Failed to answer callback:', this.#sanitizeError(error));
     }
   }
 
@@ -388,10 +440,10 @@ export class TelegramService {
 
       if (!response.ok) {
         const error = await response.text();
-        console.error('Telegram API Error:', error);
+        console.error('Telegram API Error:', this.#sanitizeError(error));
       }
     } catch (error) {
-      console.error('Failed to send Telegram message:', error);
+      console.error('Failed to send Telegram message:', this.#sanitizeError(error));
     }
   }
 
@@ -420,12 +472,12 @@ export class TelegramService {
 
       if (!response.ok) {
         const error = await response.text();
-        console.error('Telegram API Error (QR):', error);
+        console.error('Telegram API Error (QR):', this.#sanitizeError(error));
       } else {
         console.log('QR Code sent to Telegram successfully');
       }
     } catch (error) {
-      console.error('Failed to send QR code to Telegram:', error);
+      console.error('Failed to send QR code to Telegram:', this.#sanitizeError(error));
     }
   }
 }
