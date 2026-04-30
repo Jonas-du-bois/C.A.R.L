@@ -30,3 +30,7 @@
 ## 2026-03-02 - Caching External API Calls for Frequent Schedule Lookups
 **Learning:** `CalendarService.getUpcomingEvents` was calling the Google Calendar API on every request, even for subsequent checks within the same conversation session. This caused significant latency and redundant API usage. By implementing a short-lived (5-minute) cache with a default fetch range (14 days), multiple queries (e.g., availability check -> slot proposal -> conflict check) can be served from memory.
 **Action:** Implement `eventsCache` in `CalendarService` with invalidation on write operations (`createEvent`, `createTask`). This reduces N API calls to 1 per 5 minutes for schedule-related queries, improving response time and reducing quota usage.
+
+## 2024-04-30 - Optimize duplicate message checks
+**Learning:** Duplicate checks were using heavy JOIN queries and running after expensive IPC calls (`getChatSafe`). Moving duplicate prevention to use a lightweight `SELECT 1` query *before* external service calls minimizes overhead significantly for redundant events.
+**Action:** Always validate payload uniqueness with minimal DB operations before initiating expensive async tasks or external API calls.
