@@ -316,4 +316,36 @@ describe('MessageRepository Integration', () => {
       assert.strictEqual(results[0].body, 'Hello World');
     });
   });
+
+  describe('getTopContacts', () => {
+    it('returns contacts with pre-calculated stats directly from contacts table instead of correlated subqueries', () => {
+      const contact1Id = repository.findOrCreateContact('1234567890', { pushName: 'Alice' }, { incrementReceived: true }).id;
+      for(let i = 0; i < 5; i++) repository.updateContactStats(contact1Id, 'incoming');
+      for(let i = 0; i < 2; i++) repository.updateContactStats(contact1Id, 'outgoing');
+
+      const contact2Id = repository.findOrCreateContact('0987654321', { pushName: 'Bob' }, { incrementReceived: true }).id;
+      for(let i = 0; i < 2; i++) repository.updateContactStats(contact2Id, 'incoming');
+      for(let i = 0; i < 1; i++) repository.updateContactStats(contact2Id, 'outgoing');
+
+      const contact3Id = repository.findOrCreateContact('5555555555', { pushName: 'Charlie' }).id;
+
+      const topContacts = repository.getTopContacts(3);
+
+      assert.strictEqual(topContacts.length, 3);
+      assert.strictEqual(topContacts[0].id, contact1Id);
+      assert.strictEqual(topContacts[0].phone_number, '1234567890');
+      assert.strictEqual(topContacts[0].messages_received, 6);
+      assert.strictEqual(topContacts[0].messages_sent, 2);
+
+      assert.strictEqual(topContacts[1].id, contact2Id);
+      assert.strictEqual(topContacts[1].phone_number, '0987654321');
+      assert.strictEqual(topContacts[1].messages_received, 3);
+      assert.strictEqual(topContacts[1].messages_sent, 1);
+
+      assert.strictEqual(topContacts[2].id, contact3Id);
+      assert.strictEqual(topContacts[2].phone_number, '5555555555');
+      assert.strictEqual(topContacts[2].messages_received, 0);
+      assert.strictEqual(topContacts[2].messages_sent, 0);
+    });
+  });
 });
