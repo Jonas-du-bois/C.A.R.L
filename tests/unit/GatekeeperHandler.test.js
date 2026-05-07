@@ -10,6 +10,11 @@ describe('GatekeeperHandler', () => {
   });
 
   describe('shouldProcess', () => {
+    it('should block messages with extremely large bodies (DoS protection)', () => {
+      const message = { from: 'user1@s.whatsapp.net', body: 'a'.repeat(4097) };
+      assert.strictEqual(gatekeeper.shouldProcess(message), false);
+    });
+
     it('should allow first message from a sender', () => {
       const message = { from: 'user1@s.whatsapp.net' };
       assert.strictEqual(gatekeeper.shouldProcess(message), true);
