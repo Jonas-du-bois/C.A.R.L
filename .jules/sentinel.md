@@ -27,3 +27,7 @@
 **Vulnerability:** Denial of Service (DoS) via memory exhaustion in `GatekeeperHandler`. The handler stored user timestamps in an unbounded `Map` without cleanup, allowing an attacker to exhaust server memory by sending messages from many unique identifiers.
 **Learning:** Any stateful mechanism tracking user activity (like rate limits) must implement a cleanup strategy (TTL or periodic purge) to prevent unbounded growth.
 **Prevention:** Implemented a periodic `cleanup()` task in `GatekeeperHandler` that removes users with no recent activity every 5 minutes.
+## 2025-05-29 - API Secret Leakage via Fetch
+**Vulnerability:** Standard HTTP clients like `fetch` throw network errors that include the full requested URL. For services like `TelegramService` that embed secrets (`botToken`) in the URL, this causes the secret to be leaked in error logs or thrown exceptions.
+**Learning:** Native error messages cannot be trusted to be safe for logging when secrets are embedded in URLs. The `Error` object (including its `message`, `stack`, and nested `cause`) must be treated as a potential secret leak.
+**Prevention:** Implement a recursive `#sanitizeError` method that creates a new Error instance, preserving the prototype name and stack, but scrubbing the secret string before logging or re-throwing.
