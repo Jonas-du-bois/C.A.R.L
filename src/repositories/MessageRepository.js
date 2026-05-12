@@ -129,6 +129,10 @@ export class MessageRepository {
     `).get(messageId);
   }
 
+  messageExists(messageId) {
+    return this.#db.prepare('SELECT 1 FROM messages WHERE message_id = ?').get(messageId) !== undefined;
+  }
+
   getMessageByInternalId(id) {
     return this.#db.prepare(`
       SELECT m.*, c.phone_number, c.push_name, c.display_name
