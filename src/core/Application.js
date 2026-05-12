@@ -214,18 +214,18 @@ export class Application {
         // Ignorer ses propres messages et les statuts
         if (msg.fromMe || msg.isStatus) return;
 
+        // Éviter les doublons - vérifier si le message existe déjà AVANT les appels asynchrones coûteux
+        const existingMessage = messageRepo.messageExists(msg.id.id);
+        if (existingMessage) {
+          return; // Message déjà sauvegardé, ignorer silencieusement
+        }
+
         const chat = await this.#getChatSafe(msg);
         
         // Gestion des messages de groupe
         if (chat?.isGroup) {
           await this.#handleGroupMessage(msg, chat, messageRepo);
           return;
-        }
-
-        // Éviter les doublons - vérifier si le message existe déjà
-        const existingMessage = messageRepo.getMessageById(msg.id.id);
-        if (existingMessage) {
-          return; // Message déjà sauvegardé, ignorer silencieusement
         }
 
         const message = this.#createMessage(msg);
