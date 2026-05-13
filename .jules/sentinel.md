@@ -27,3 +27,8 @@
 **Vulnerability:** Denial of Service (DoS) via memory exhaustion in `GatekeeperHandler`. The handler stored user timestamps in an unbounded `Map` without cleanup, allowing an attacker to exhaust server memory by sending messages from many unique identifiers.
 **Learning:** Any stateful mechanism tracking user activity (like rate limits) must implement a cleanup strategy (TTL or periodic purge) to prevent unbounded growth.
 **Prevention:** Implemented a periodic `cleanup()` task in `GatekeeperHandler` that removes users with no recent activity every 5 minutes.
+
+## 2025-05-29 - AI API Key Sanitization
+**Vulnerability:** API key leakage in `AIProviderFactory`. `fetch` network errors (like DNS failures or connection refused) throw native Node.js errors with a `cause` property that can contain the full requested URL, exposing embedded API keys (e.g., Gemini API).
+**Learning:** Standard HTTP clients like `fetch` can leak full URLs or headers on failure. Any service interacting with APIs that embed secrets must actively intercept and scrub error objects and strings before logging or rethrowing them. Native `fetch` failures throw `TypeError: fetch failed` where the underlying system error is nested within the error's `cause` property. Error sanitization must recursively process this property.
+**Prevention:** Implemented a `#sanitizeError` method in the base `AIProvider` class to recursively redact `apiKey` from error objects (including `message`, `stack`, and `cause`), and wrapped `fetch` calls in `try...catch` blocks to sanitize any thrown errors.
