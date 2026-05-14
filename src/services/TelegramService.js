@@ -23,6 +23,42 @@ export class TelegramService {
     this.#allowedUserId = config.telegram.allowedUserId || config.telegram.adminId;
   }
 
+  #sanitizeError(error) {
+    if (!error || !this.#botToken) return error;
+
+    if (typeof error === 'string') {
+      return error.replaceAll(this.#botToken, '[HIDDEN_TOKEN]');
+    }
+
+    let sanitizedCause = error.cause;
+    if (error.cause) {
+      sanitizedCause = this.#sanitizeError(error.cause);
+    }
+
+    const newError = sanitizedCause
+      ? new Error(error.message?.replaceAll(this.#botToken, '[HIDDEN_TOKEN]'), { cause: sanitizedCause })
+      : new Error(error.message?.replaceAll(this.#botToken, '[HIDDEN_TOKEN]'));
+
+    newError.name = error.name;
+
+    if (error.stack) {
+      newError.stack = error.stack.replaceAll(this.#botToken, '[HIDDEN_TOKEN]');
+    }
+
+    // Copier d'autres propriétés éventuelles, en les sanitizant si ce sont des strings
+    for (const key of Object.keys(error)) {
+        if (key !== 'cause' && key !== 'message' && key !== 'stack' && key !== 'name') {
+            if (typeof error[key] === 'string') {
+                newError[key] = error[key].replaceAll(this.#botToken, '[HIDDEN_TOKEN]');
+            } else {
+                newError[key] = error[key];
+            }
+        }
+    }
+
+    return newError;
+  }
+
   // ============================================
   // GESTION DES ÉVÉNEMENTS EN ATTENTE
   // ============================================
@@ -167,7 +203,9 @@ export class TelegramService {
         await this.#handleUpdate(update);
       }
     } catch (error) {
-      // Silently ignore polling errors
+      if (process.env.NODE_ENV === 'development') {
+        console.error('[TelegramService] Polling error:', this.#sanitizeError(error));
+      }
     } finally {
       this.#isPolling = false;
     }
@@ -298,7 +336,7 @@ export class TelegramService {
         })
       });
     } catch (error) {
-      console.error('Failed to answer callback:', error);
+      console.error('Failed to answer callback:', this.#sanitizeError(error));
     }
   }
 
@@ -388,10 +426,10 @@ export class TelegramService {
 
       if (!response.ok) {
         const error = await response.text();
-        console.error('Telegram API Error:', error);
+        console.error('Telegram API Error:', this.#sanitizeError(error));
       }
     } catch (error) {
-      console.error('Failed to send Telegram message:', error);
+      console.error('Failed to send Telegram message:', this.#sanitizeError(error));
     }
   }
 
@@ -420,12 +458,12 @@ export class TelegramService {
 
       if (!response.ok) {
         const error = await response.text();
-        console.error('Telegram API Error (QR):', error);
+        console.error('Telegram API Error (QR):', this.#sanitizeError(error));
       } else {
         console.log('QR Code sent to Telegram successfully');
       }
     } catch (error) {
-      console.error('Failed to send QR code to Telegram:', error);
+      console.error('Failed to send QR code to Telegram:', this.#sanitizeError(error));
     }
   }
 }
