@@ -1,5 +1,5 @@
 import QRCode from 'qrcode';
-import { escapeHtml } from '../utils/Sanitizer.js';
+import { escapeHtml, sanitizeError } from '../utils/Sanitizer.js';
 
 export class TelegramService {
   #botToken;
@@ -298,7 +298,8 @@ export class TelegramService {
         })
       });
     } catch (error) {
-      console.error('Failed to answer callback:', error);
+      const sanitizedError = sanitizeError(error, this.#botToken);
+      console.error('Failed to answer callback:', sanitizedError);
     }
   }
 
@@ -391,7 +392,8 @@ export class TelegramService {
         console.error('Telegram API Error:', error);
       }
     } catch (error) {
-      console.error('Failed to send Telegram message:', error);
+      const sanitizedError = sanitizeError(error, this.#botToken);
+      console.error('Failed to send Telegram message:', sanitizedError);
     }
   }
 
@@ -425,7 +427,8 @@ export class TelegramService {
         console.log('QR Code sent to Telegram successfully');
       }
     } catch (error) {
-      console.error('Failed to send QR code to Telegram:', error);
+      const sanitizedError = sanitizeError(error, this.#botToken);
+      console.error('Failed to send QR code to Telegram:', sanitizedError);
     }
   }
 }
