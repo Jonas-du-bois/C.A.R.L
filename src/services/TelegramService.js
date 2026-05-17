@@ -167,7 +167,10 @@ export class TelegramService {
         await this.#handleUpdate(update);
       }
     } catch (error) {
-      // Silently ignore polling errors
+      // Silently ignore polling errors in production, but log in development
+      if (process.env.NODE_ENV === 'development') {
+        console.error('[TelegramService] Polling error:', this.#sanitizeError(error));
+      }
     } finally {
       this.#isPolling = false;
     }
@@ -282,6 +285,31 @@ export class TelegramService {
     }
   }
 
+  #sanitizeError(error) {
+    if (!error) return error;
+    if (typeof error === 'string') {
+      return error.replaceAll(this.#botToken, '[HIDDEN_TOKEN]');
+    }
+
+    if (error instanceof Error) {
+      const newError = new Error(this.#sanitizeError(error.message));
+      newError.name = error.name;
+      // Copy other standard properties
+      if (error.code) newError.code = error.code;
+      if (error.status) newError.status = error.status;
+
+      if (error.stack) {
+        newError.stack = this.#sanitizeError(error.stack);
+      }
+      if (error.cause) {
+        newError.cause = this.#sanitizeError(error.cause);
+      }
+      return newError;
+    }
+
+    return error;
+  }
+
   /**
    * Answer a callback query
    */
@@ -298,7 +326,7 @@ export class TelegramService {
         })
       });
     } catch (error) {
-      console.error('Failed to answer callback:', error);
+      console.error('Failed to answer callback:', this.#sanitizeError(error));
     }
   }
 
@@ -391,7 +419,7 @@ export class TelegramService {
         console.error('Telegram API Error:', error);
       }
     } catch (error) {
-      console.error('Failed to send Telegram message:', error);
+      console.error('Failed to send Telegram message:', this.#sanitizeError(error));
     }
   }
 
@@ -425,7 +453,7 @@ export class TelegramService {
         console.log('QR Code sent to Telegram successfully');
       }
     } catch (error) {
-      console.error('Failed to send QR code to Telegram:', error);
+      console.error('Failed to send QR code to Telegram:', this.#sanitizeError(error));
     }
   }
 }
