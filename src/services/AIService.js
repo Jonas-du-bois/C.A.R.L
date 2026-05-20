@@ -99,6 +99,44 @@ export class AIService {
     }
   }
 
+  _sanitizeError(error) {
+    if (!error) return error;
+
+    const sanitize = (err) => {
+      if (typeof err === 'string') {
+        const escapedKey = this.#apiKey.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        return err.replace(new RegExp(escapedKey, 'g'), '[HIDDEN_TOKEN]');
+      }
+      if (!err || typeof err !== 'object') return err;
+
+      const newErr = new Error();
+      if (err.name) newErr.name = err.name;
+
+      const cleanString = (str) => {
+        if (typeof str !== 'string') return str;
+        const escapedKey = this.#apiKey.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        return str.replace(new RegExp(escapedKey, 'g'), '[HIDDEN_TOKEN]');
+      };
+
+      if (err.message) newErr.message = cleanString(err.message);
+      if (err.stack) newErr.stack = cleanString(err.stack);
+
+      if (err.cause !== undefined) {
+        newErr.cause = sanitize(err.cause);
+      }
+
+      for (const key of Object.keys(err)) {
+        if (key !== 'message' && key !== 'stack' && key !== 'cause' && key !== 'name') {
+          newErr[key] = typeof err[key] === 'string' ? cleanString(err[key]) : err[key];
+        }
+      }
+
+      return newErr;
+    };
+
+    return sanitize(error);
+  }
+
   #getDefaultModel() {
     switch (this.#provider) {
       case 'gemini': return 'gemini-2.0-flash';
@@ -134,20 +172,25 @@ export class AIService {
   async #callGemini(userPrompt) {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${this.#model}:generateContent?key=${this.#apiKey}`;
     
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{
-          parts: [{ text: `${SYSTEM_PROMPT}\n\nUser message:\n${userPrompt}` }]
-        }],
-        generationConfig: {
+    let response;
+    try {
+      response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{
+      parts: [{ text: `${SYSTEM_PROMPT}\n\nUser message:\n${userPrompt}` }]
+      }],
+          generationConfig: {
           temperature: this.#temperature,
-          maxOutputTokens: this.#maxTokens,
-          responseMimeType: "application/json"
-        }
-      })
-    });
+            maxOutputTokens: this.#maxTokens,
+            responseMimeType: "application/json"
+          }
+        })
+      });
+    } catch (error) {
+      throw this._sanitizeError(error);
+    }
 
     if (!response.ok) {
       const error = await response.json();
@@ -165,23 +208,28 @@ export class AIService {
   }
 
   async #callOpenAI(userPrompt) {
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${this.#apiKey}`
-      },
-      body: JSON.stringify({
-        model: this.#model,
-        messages: [
-          { role: 'system', content: SYSTEM_PROMPT },
-          { role: 'user', content: userPrompt }
-        ],
-        response_format: { type: 'json_object' },
-        max_tokens: this.#maxTokens,
-        temperature: this.#temperature
-      })
-    });
+    let response;
+    try {
+      response = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${this.#apiKey}`
+        },
+        body: JSON.stringify({
+          model: this.#model,
+          messages: [
+            { role: 'system', content: SYSTEM_PROMPT },
+            { role: 'user', content: userPrompt }
+          ],
+          response_format: { type: 'json_object' },
+          max_tokens: this.#maxTokens,
+          temperature: this.#temperature
+        })
+      });
+    } catch (error) {
+      throw this._sanitizeError(error);
+    }
 
     if (!response.ok) {
       const error = await response.json();
@@ -193,23 +241,28 @@ export class AIService {
   }
 
   async #callGroq(userPrompt) {
-    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${this.#apiKey}`
-      },
-      body: JSON.stringify({
-        model: this.#model,
-        messages: [
-          { role: 'system', content: SYSTEM_PROMPT },
-          { role: 'user', content: userPrompt }
-        ],
-        response_format: { type: 'json_object' },
-        max_tokens: this.#maxTokens,
-        temperature: this.#temperature
-      })
-    });
+    let response;
+    try {
+      response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${this.#apiKey}`
+        },
+        body: JSON.stringify({
+          model: this.#model,
+          messages: [
+            { role: 'system', content: SYSTEM_PROMPT },
+            { role: 'user', content: userPrompt }
+          ],
+          response_format: { type: 'json_object' },
+          max_tokens: this.#maxTokens,
+          temperature: this.#temperature
+        })
+      });
+    } catch (error) {
+      throw this._sanitizeError(error);
+    }
 
     if (!response.ok) {
       const error = await response.json();
@@ -297,18 +350,23 @@ Return a JSON object with a single "summary" field containing a concise French s
   async #callGeminiBriefing(prompt) {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${this.#model}:generateContent?key=${this.#apiKey}`;
     
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: {
+    let response;
+    try {
+      response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: {
           temperature: 0.5,
-          maxOutputTokens: 200,
-          responseMimeType: "application/json"
-        }
-      })
-    });
+            maxOutputTokens: 200,
+            responseMimeType: "application/json"
+          }
+        })
+      });
+    } catch (error) {
+      throw this._sanitizeError(error);
+    }
 
     if (!response.ok) {
       return { summary: "Impossible de générer le résumé." };
@@ -329,19 +387,24 @@ Return a JSON object with a single "summary" field containing a concise French s
       ? 'https://api.groq.com/openai/v1/chat/completions'
       : 'https://api.openai.com/v1/chat/completions';
 
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${this.#apiKey}`
-      },
-      body: JSON.stringify({
-        model: this.#model,
-        messages: [{ role: 'user', content: prompt }],
-        response_format: { type: 'json_object' },
-        max_tokens: 200
-      })
-    });
+    let response;
+    try {
+      response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${this.#apiKey}`
+        },
+        body: JSON.stringify({
+          model: this.#model,
+          messages: [{ role: 'user', content: prompt }],
+          response_format: { type: 'json_object' },
+          max_tokens: 200
+        })
+      });
+    } catch (error) {
+      throw this._sanitizeError(error);
+    }
 
     if (!response.ok) {
       return { summary: "Impossible de générer le résumé." };
@@ -490,18 +553,23 @@ IMPORTANT:
   async #callGeminiExtraction(prompt) {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${this.#model}:generateContent?key=${this.#apiKey}`;
     
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: {
+    let response;
+    try {
+      response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: {
           temperature: 0.3, // Basse température pour plus de précision
-          maxOutputTokens: 2000,
-          responseMimeType: "application/json"
-        }
-      })
-    });
+            maxOutputTokens: 2000,
+            responseMimeType: "application/json"
+          }
+        })
+      });
+    } catch (error) {
+      throw this._sanitizeError(error);
+    }
 
     if (!response.ok) throw new Error('Gemini extraction API error');
     const data = await response.json();
@@ -517,20 +585,25 @@ IMPORTANT:
       ? 'https://api.groq.com/openai/v1/chat/completions'
       : 'https://api.openai.com/v1/chat/completions';
 
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${this.#apiKey}`
-      },
-      body: JSON.stringify({
-        model: this.#model,
-        messages: [{ role: 'user', content: prompt }],
-        response_format: { type: 'json_object' },
-        max_tokens: 2000,
-        temperature: 0.3
-      })
-    });
+    let response;
+    try {
+      response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${this.#apiKey}`
+        },
+        body: JSON.stringify({
+          model: this.#model,
+          messages: [{ role: 'user', content: prompt }],
+          response_format: { type: 'json_object' },
+          max_tokens: 2000,
+          temperature: 0.3
+        })
+      });
+    } catch (error) {
+      throw this._sanitizeError(error);
+    }
 
     if (!response.ok) throw new Error('Chat extraction API error');
     const data = await response.json();
@@ -675,18 +748,23 @@ Génère un JSON avec:
   async #callGeminiCompact(prompt) {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${this.#model}:generateContent?key=${this.#apiKey}`;
     
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: {
+    let response;
+    try {
+      response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: {
           temperature: 0.5,
-          maxOutputTokens: 1000,
-          responseMimeType: "application/json"
-        }
-      })
-    });
+            maxOutputTokens: 1000,
+            responseMimeType: "application/json"
+          }
+        })
+      });
+    } catch (error) {
+      throw this._sanitizeError(error);
+    }
 
     if (!response.ok) throw new Error('Gemini compact API error');
     const data = await response.json();
@@ -702,19 +780,24 @@ Génère un JSON avec:
       ? 'https://api.groq.com/openai/v1/chat/completions'
       : 'https://api.openai.com/v1/chat/completions';
 
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${this.#apiKey}`
-      },
-      body: JSON.stringify({
-        model: this.#model,
-        messages: [{ role: 'user', content: prompt }],
-        response_format: { type: 'json_object' },
-        max_tokens: 1000
-      })
-    });
+    let response;
+    try {
+      response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${this.#apiKey}`
+        },
+        body: JSON.stringify({
+          model: this.#model,
+          messages: [{ role: 'user', content: prompt }],
+          response_format: { type: 'json_object' },
+          max_tokens: 1000
+        })
+      });
+    } catch (error) {
+      throw this._sanitizeError(error);
+    }
 
     if (!response.ok) throw new Error('Chat compact API error');
     const data = await response.json();
@@ -1029,18 +1112,23 @@ RÈGLES FINALES IMPORTANTES:
   async #callGeminiReport(prompt) {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${this.#model}:generateContent?key=${this.#apiKey}`;
     
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: {
+    let response;
+    try {
+      response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: {
           temperature: 0.7,
-          maxOutputTokens: 4000,
-          responseMimeType: "application/json"
-        }
-      })
-    });
+            maxOutputTokens: 4000,
+            responseMimeType: "application/json"
+          }
+        })
+      });
+    } catch (error) {
+      throw this._sanitizeError(error);
+    }
 
     if (!response.ok) {
       throw new Error('Gemini API error');
@@ -1056,19 +1144,24 @@ RÈGLES FINALES IMPORTANTES:
       ? 'https://api.groq.com/openai/v1/chat/completions'
       : 'https://api.openai.com/v1/chat/completions';
 
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${this.#apiKey}`
-      },
-      body: JSON.stringify({
-        model: this.#model,
-        messages: [{ role: 'user', content: prompt }],
-        response_format: { type: 'json_object' },
-        max_tokens: 4000
-      })
-    });
+    let response;
+    try {
+      response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${this.#apiKey}`
+        },
+        body: JSON.stringify({
+          model: this.#model,
+          messages: [{ role: 'user', content: prompt }],
+          response_format: { type: 'json_object' },
+          max_tokens: 4000
+        })
+      });
+    } catch (error) {
+      throw this._sanitizeError(error);
+    }
 
     if (!response.ok) {
       throw new Error('Chat API error');
