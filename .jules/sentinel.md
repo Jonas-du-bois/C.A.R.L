@@ -27,3 +27,8 @@
 **Vulnerability:** Denial of Service (DoS) via memory exhaustion in `GatekeeperHandler`. The handler stored user timestamps in an unbounded `Map` without cleanup, allowing an attacker to exhaust server memory by sending messages from many unique identifiers.
 **Learning:** Any stateful mechanism tracking user activity (like rate limits) must implement a cleanup strategy (TTL or periodic purge) to prevent unbounded growth.
 **Prevention:** Implemented a periodic `cleanup()` task in `GatekeeperHandler` that removes users with no recent activity every 5 minutes.
+
+## 2025-05-29 - Network Error API Key Leakage
+**Vulnerability:** Native `fetch` errors (e.g., `ECONNREFUSED`) in `AIProviderFactory` threw errors containing the API key in the URL within the nested `cause` property. If these network exceptions were logged, the API keys could be leaked in plaintext.
+**Learning:** Native `fetch` wraps underlying system errors in a `cause` property (often an `AggregateError` with its own nested `errors` array). Error sanitization routines must be recursive and specifically handle these nested structures to ensure no secrets leak through stack traces or cause messages.
+**Prevention:** Implemented a recursive `_sanitizeError` method in the base `AIProvider` class that sanitizes the `message`, `stack`, `cause`, and any nested `errors` array, replacing the API key with `[HIDDEN_TOKEN]`. All `fetch` operations are wrapped in `try...catch` blocks that apply this sanitization before re-throwing.
