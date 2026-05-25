@@ -27,3 +27,8 @@
 **Vulnerability:** Denial of Service (DoS) via memory exhaustion in `GatekeeperHandler`. The handler stored user timestamps in an unbounded `Map` without cleanup, allowing an attacker to exhaust server memory by sending messages from many unique identifiers.
 **Learning:** Any stateful mechanism tracking user activity (like rate limits) must implement a cleanup strategy (TTL or periodic purge) to prevent unbounded growth.
 **Prevention:** Implemented a periodic `cleanup()` task in `GatekeeperHandler` that removes users with no recent activity every 5 minutes.
+
+## 2026-05-25 - API Key Leak in Fetch Errors
+**Vulnerability:** Native `fetch` errors (e.g., connection refused) include the requested URL in the error's `cause` property. For APIs like Gemini where the API key is passed in the URL, this causes the key to leak in logs if the error is caught and printed.
+**Learning:** Error objects from network libraries often contain sensitive request details deep within nested properties (like `cause` or `config`).
+**Prevention:** Catch raw network errors and recursively sanitize them (including `.message`, `.stack`, and `.cause`) to strip sensitive tokens before propagating the error.

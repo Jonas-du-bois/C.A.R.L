@@ -37,10 +37,32 @@ class AIProvider {
 // ============================================
 
 class GeminiProvider extends AIProvider {
+  _sanitizeError(error) {
+    if (!error) return error;
+    if (typeof error === 'string') {
+      return error.replace(new RegExp(this.apiKey, 'g'), '[HIDDEN_TOKEN]');
+    }
+
+    const newError = new Error(error.message?.replace(new RegExp(this.apiKey, 'g'), '[HIDDEN_TOKEN]'));
+    newError.name = error.name;
+
+    if (error.stack) {
+      newError.stack = error.stack.replace(new RegExp(this.apiKey, 'g'), '[HIDDEN_TOKEN]');
+    }
+
+    if (error.cause) {
+      newError.cause = this._sanitizeError(error.cause);
+    }
+
+    return newError;
+  }
+
   async call(prompt, options = {}) {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent?key=${this.apiKey}`;
     
-    const response = await fetch(url, {
+    let response;
+    try {
+      response = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -52,6 +74,9 @@ class GeminiProvider extends AIProvider {
         }
       })
     });
+    } catch (err) {
+      throw this._sanitizeError(err);
+    }
 
     if (!response.ok) {
       const error = await response.json();
