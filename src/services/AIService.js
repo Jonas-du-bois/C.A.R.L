@@ -131,23 +131,48 @@ export class AIService {
     }
   }
 
+  #sanitizeError(error) {
+    if (!error) return error;
+    if (typeof error === 'string') {
+      return error.replace(new RegExp(this.#apiKey, 'g'), '[HIDDEN_TOKEN]');
+    }
+
+    const newError = new Error(error.message?.replace(new RegExp(this.#apiKey, 'g'), '[HIDDEN_TOKEN]'));
+    newError.name = error.name;
+
+    if (error.stack) {
+      newError.stack = error.stack.replace(new RegExp(this.#apiKey, 'g'), '[HIDDEN_TOKEN]');
+    }
+
+    if (error.cause) {
+      newError.cause = this.#sanitizeError(error.cause);
+    }
+
+    return newError;
+  }
+
   async #callGemini(userPrompt) {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${this.#model}:generateContent?key=${this.#apiKey}`;
     
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{
-          parts: [{ text: `${SYSTEM_PROMPT}\n\nUser message:\n${userPrompt}` }]
-        }],
-        generationConfig: {
-          temperature: this.#temperature,
-          maxOutputTokens: this.#maxTokens,
-          responseMimeType: "application/json"
-        }
-      })
-    });
+    let response;
+    try {
+      response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{
+            parts: [{ text: `${SYSTEM_PROMPT}\n\nUser message:\n${userPrompt}` }]
+          }],
+          generationConfig: {
+            temperature: this.#temperature,
+            maxOutputTokens: this.#maxTokens,
+            responseMimeType: "application/json"
+          }
+        })
+      });
+    } catch (err) {
+      throw this.#sanitizeError(err);
+    }
 
     if (!response.ok) {
       const error = await response.json();
@@ -297,18 +322,23 @@ Return a JSON object with a single "summary" field containing a concise French s
   async #callGeminiBriefing(prompt) {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${this.#model}:generateContent?key=${this.#apiKey}`;
     
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: {
-          temperature: 0.5,
-          maxOutputTokens: 200,
-          responseMimeType: "application/json"
-        }
-      })
-    });
+    let response;
+    try {
+      response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: {
+            temperature: 0.5,
+            maxOutputTokens: 200,
+            responseMimeType: "application/json"
+          }
+        })
+      });
+    } catch (err) {
+      throw this.#sanitizeError(err);
+    }
 
     if (!response.ok) {
       return { summary: "Impossible de générer le résumé." };
@@ -490,18 +520,23 @@ IMPORTANT:
   async #callGeminiExtraction(prompt) {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${this.#model}:generateContent?key=${this.#apiKey}`;
     
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: {
-          temperature: 0.3, // Basse température pour plus de précision
-          maxOutputTokens: 2000,
-          responseMimeType: "application/json"
-        }
-      })
-    });
+    let response;
+    try {
+      response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: {
+            temperature: 0.3, // Basse température pour plus de précision
+            maxOutputTokens: 2000,
+            responseMimeType: "application/json"
+          }
+        })
+      });
+    } catch (err) {
+      throw this.#sanitizeError(err);
+    }
 
     if (!response.ok) throw new Error('Gemini extraction API error');
     const data = await response.json();
@@ -675,18 +710,23 @@ Génère un JSON avec:
   async #callGeminiCompact(prompt) {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${this.#model}:generateContent?key=${this.#apiKey}`;
     
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: {
-          temperature: 0.5,
-          maxOutputTokens: 1000,
-          responseMimeType: "application/json"
-        }
-      })
-    });
+    let response;
+    try {
+      response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: {
+            temperature: 0.5,
+            maxOutputTokens: 1000,
+            responseMimeType: "application/json"
+          }
+        })
+      });
+    } catch (err) {
+      throw this.#sanitizeError(err);
+    }
 
     if (!response.ok) throw new Error('Gemini compact API error');
     const data = await response.json();
@@ -1029,18 +1069,23 @@ RÈGLES FINALES IMPORTANTES:
   async #callGeminiReport(prompt) {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${this.#model}:generateContent?key=${this.#apiKey}`;
     
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: {
-          temperature: 0.7,
-          maxOutputTokens: 4000,
-          responseMimeType: "application/json"
-        }
-      })
-    });
+    let response;
+    try {
+      response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: {
+            temperature: 0.7,
+            maxOutputTokens: 4000,
+            responseMimeType: "application/json"
+          }
+        })
+      });
+    } catch (err) {
+      throw this.#sanitizeError(err);
+    }
 
     if (!response.ok) {
       throw new Error('Gemini API error');

@@ -56,4 +56,29 @@ describe('AIService Security', () => {
     assert.strictEqual(result.event_details.summary, "Evil Meeting");
     assert.strictEqual(result.event_details.calendarId, undefined, "calendarId should be stripped from event_details");
   });
+
+  it('should sanitize API key from fetch errors to prevent leakage', async () => {
+    global.fetch = async (url) => {
+      const err = new TypeError('fetch failed');
+      err.cause = new Error(`connect ECONNREFUSED ::1:12345 URL: ${url}`);
+      throw err;
+    };
+
+    const service = new AIService({
+      ai: {
+        provider: 'gemini',
+        apiKey: 'SECRET_GEMINI_KEY_123',
+        model: 'gemini-2.0-flash'
+      }
+    });
+
+    try {
+      await service.analyzeMessage({ body: 'test', from: '123' });
+      assert.fail('Should have thrown an error');
+    } catch (error) {
+      assert.strictEqual(error.message.includes('SECRET_GEMINI_KEY_123'), false, 'API key leaked in error message');
+      assert.strictEqual(error.cause?.message.includes('SECRET_GEMINI_KEY_123'), false, 'API key leaked in cause message');
+      assert.strictEqual(error.cause?.message.includes('[HIDDEN_TOKEN]'), true, 'API key was not replaced with [HIDDEN_TOKEN]');
+    }
+  });
 });
