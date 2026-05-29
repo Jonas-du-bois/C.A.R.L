@@ -27,3 +27,8 @@
 **Vulnerability:** Denial of Service (DoS) via memory exhaustion in `GatekeeperHandler`. The handler stored user timestamps in an unbounded `Map` without cleanup, allowing an attacker to exhaust server memory by sending messages from many unique identifiers.
 **Learning:** Any stateful mechanism tracking user activity (like rate limits) must implement a cleanup strategy (TTL or periodic purge) to prevent unbounded growth.
 **Prevention:** Implemented a periodic `cleanup()` task in `GatekeeperHandler` that removes users with no recent activity every 5 minutes.
+
+## 2025-05-29 - AI API Key Network Error Leak
+**Vulnerability:** Native `fetch` network failures (like connection refused) can throw errors (`TypeError: fetch failed`) that embed the URL or properties in the error object or its nested `cause`. Because the `GeminiProvider` explicitly passed the API key in the request URL string, any logging of these uncaught network errors leaked the raw API key to standard out/error logs.
+**Learning:** System-level API errors originating from `fetch` (before parsing JSON) can expose sensitive URL parts in unexpected ways, particularly in error causes or custom stack trace fields.
+**Prevention:** The AI provider's HTTP dispatch methods must wrap `fetch` calls in `try...catch` blocks and apply recursive sanitization (`_sanitizeError`) to the thrown `Error` objects, wiping the API key from messages, stacks, causes, and custom string properties before re-throwing it.
