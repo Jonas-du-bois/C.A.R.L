@@ -120,6 +120,13 @@ export class MessageRepository {
     return result.lastInsertRowid;
   }
 
+  /**
+   * ⚡ Bolt: Lightweight SELECT 1 query for existence checks to avoid JOIN overhead
+   */
+  messageExists(messageId) {
+    return this.#db.prepare('SELECT 1 FROM messages WHERE message_id = ?').get(messageId) !== undefined;
+  }
+
   getMessageById(messageId) {
     return this.#db.prepare(`
       SELECT m.*, c.phone_number, c.push_name, c.display_name
