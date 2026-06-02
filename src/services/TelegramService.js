@@ -23,6 +23,58 @@ export class TelegramService {
     this.#allowedUserId = config.telegram.allowedUserId || config.telegram.adminId;
   }
 
+
+  async #fetchSafe(url, options) {
+    try {
+      return await fetch(url, options);
+    } catch (error) {
+      throw this.#sanitizeError(error);
+    }
+  }
+
+  #sanitizeError(error) {
+    if (!error || !this.#botToken || typeof this.#botToken !== 'string') return error;
+
+    let escapedToken = '';
+    for (let i = 0; i < this.#botToken.length; i++) {
+      const char = this.#botToken[i];
+      if ('\\^$*+?.()|{}[]'.includes(char)) {
+        escapedToken += '\\' + char;
+      } else {
+        escapedToken += char;
+      }
+    }
+    const secretRegex = new RegExp(escapedToken, 'g');
+    const hiddenToken = '[HIDDEN_TOKEN]';
+
+    const safeErr = new Error(error.message ? error.message.replace(secretRegex, hiddenToken) : '');
+    safeErr.name = error.name || 'Error';
+
+    // Copy all properties
+    for (const key of Object.getOwnPropertyNames(error)) {
+        if (key !== 'message' && key !== 'name' && key !== 'stack' && key !== 'cause') {
+            safeErr[key] = error[key];
+        }
+    }
+
+    if (error.stack) {
+      safeErr.stack = error.stack.replace(secretRegex, hiddenToken);
+    }
+
+    if (error.cause) {
+      if (typeof error.cause === 'string') {
+        safeErr.cause = error.cause.replace(secretRegex, hiddenToken);
+      } else if (error.cause instanceof Error) {
+        safeErr.cause = this.#sanitizeError(error.cause);
+      } else {
+        safeErr.cause = error.cause;
+      }
+    }
+
+    return safeErr;
+  }
+
+
   // ============================================
   // GESTION DES ÉVÉNEMENTS EN ATTENTE
   // ============================================
@@ -151,7 +203,7 @@ export class TelegramService {
 
     try {
       const url = `https://api.telegram.org/bot${this.#botToken}/getUpdates?offset=${this.#lastUpdateId + 1}&timeout=1`;
-      const response = await fetch(url);
+      const response = await this.#fetchSafe(url);
       const data = await response.json();
 
       if (!data.ok || !data.result?.length) {
@@ -288,7 +340,7 @@ export class TelegramService {
   async answerCallback(callbackQueryId, text = null) {
     try {
       const url = `https://api.telegram.org/bot${this.#botToken}/answerCallbackQuery`;
-      await fetch(url, {
+      await this.#fetchSafe(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -380,7 +432,7 @@ export class TelegramService {
         };
       }
 
-      const response = await fetch(url, {
+      const response = await this.#fetchSafe(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body)
@@ -413,7 +465,7 @@ export class TelegramService {
       formData.append('photo', new Blob([qrImageBuffer], { type: 'image/png' }), 'qrcode.png');
 
       const url = `https://api.telegram.org/bot${this.#botToken}/sendPhoto`;
-      const response = await fetch(url, {
+      const response = await this.#fetchSafe(url, {
         method: 'POST',
         body: formData
       });
