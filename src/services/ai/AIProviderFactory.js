@@ -30,6 +30,57 @@ class AIProvider {
   async call(prompt, options = {}) {
     throw new Error('Method call() must be implemented');
   }
+
+  async _fetchSafe(url, options) {
+    try {
+      return await fetch(url, options);
+    } catch (error) {
+      throw this._sanitizeError(error);
+    }
+  }
+
+  _sanitizeError(error) {
+    if (!error || !this.apiKey || typeof this.apiKey !== 'string') return error;
+
+    let escapedToken = '';
+    for (let i = 0; i < this.apiKey.length; i++) {
+      const char = this.apiKey[i];
+      if ('\\^$*+?.()|{}[]'.includes(char)) {
+        escapedToken += '\\' + char;
+      } else {
+        escapedToken += char;
+      }
+    }
+    const secretRegex = new RegExp(escapedToken, 'g');
+    const hiddenToken = '[HIDDEN_TOKEN]';
+
+    const safeErr = new Error(error.message ? error.message.replace(secretRegex, hiddenToken) : '');
+    safeErr.name = error.name || 'Error';
+
+    // Copy all properties
+    for (const key of Object.getOwnPropertyNames(error)) {
+        if (key !== 'message' && key !== 'name' && key !== 'stack' && key !== 'cause') {
+            safeErr[key] = error[key];
+        }
+    }
+
+    if (error.stack) {
+      safeErr.stack = error.stack.replace(secretRegex, hiddenToken);
+    }
+
+    if (error.cause) {
+      if (typeof error.cause === 'string') {
+        safeErr.cause = error.cause.replace(secretRegex, hiddenToken);
+      } else if (error.cause instanceof Error) {
+        safeErr.cause = this._sanitizeError(error.cause);
+      } else {
+        safeErr.cause = error.cause;
+      }
+    }
+
+    return safeErr;
+  }
+
 }
 
 // ============================================
@@ -40,7 +91,7 @@ class GeminiProvider extends AIProvider {
   async call(prompt, options = {}) {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent?key=${this.apiKey}`;
     
-    const response = await fetch(url, {
+    const response = await this._fetchSafe(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -75,7 +126,7 @@ class GeminiProvider extends AIProvider {
 
 class OpenAIProvider extends AIProvider {
   async call(prompt, options = {}) {
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    const response = await this._fetchSafe('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -111,7 +162,7 @@ class OpenAIProvider extends AIProvider {
 
 class GroqProvider extends AIProvider {
   async call(prompt, options = {}) {
-    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    const response = await this._fetchSafe('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
