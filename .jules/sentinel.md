@@ -27,3 +27,8 @@
 **Vulnerability:** Denial of Service (DoS) via memory exhaustion in `GatekeeperHandler`. The handler stored user timestamps in an unbounded `Map` without cleanup, allowing an attacker to exhaust server memory by sending messages from many unique identifiers.
 **Learning:** Any stateful mechanism tracking user activity (like rate limits) must implement a cleanup strategy (TTL or periodic purge) to prevent unbounded growth.
 **Prevention:** Implemented a periodic `cleanup()` task in `GatekeeperHandler` that removes users with no recent activity every 5 minutes.
+
+## 2026-06-05 - Native Fetch Error Sanitization
+**Vulnerability:** Native `fetch` failures in Node.js (e.g., connection refused) throw a `TypeError: fetch failed` where the underlying system error (and requested URL with embedded secrets like `botToken` or `apiKey`) is nested within the error's `cause` property. These could be logged or leaked.
+**Learning:** Error sanitization must recursively process the `cause` property to ensure secrets in nested errors are not exposed.
+**Prevention:** Implemented `#sanitizeError` in `TelegramService` and `_sanitizeError` in `AIProviderFactory` to recursively sanitize `message`, `stack`, and `cause` properties of any caught error before throwing or logging.

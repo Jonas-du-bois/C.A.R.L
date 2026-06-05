@@ -11,6 +11,46 @@ export class TelegramService {
   #callbackHandlers = new Map();
   #recentCommands = new Map();   // key: userId|messageId -> timestamp
   
+  #sanitizeError(error) {
+    if (!error) return error;
+
+    const escapeRegex = (string) => {
+        let result = '';
+        for (let i = 0; i < string.length; i++) {
+            const char = string[i];
+            if ('\\^$*+?.()|{}[]'.includes(char)) {
+                result += '\\' + char;
+            } else {
+                result += char;
+            }
+        }
+        return result;
+    };
+
+    const sanitizeProperty = (err, propName) => {
+        if (err && typeof err === 'object' && typeof err[propName] === 'string') {
+            if (this.#botToken && typeof this.#botToken === 'string') {
+                const escapedToken = escapeRegex(this.#botToken);
+                const tokenRegex = new RegExp(escapedToken, 'g');
+                err[propName] = err[propName].replace(tokenRegex, '[HIDDEN_BOT_TOKEN]');
+            }
+        }
+    };
+
+    const processErrorObj = (err) => {
+      if (err) {
+        sanitizeProperty(err, 'message');
+        sanitizeProperty(err, 'stack');
+        if (err.cause) {
+            processErrorObj(err.cause);
+        }
+      }
+    };
+
+    processErrorObj(error);
+    return error;
+  }
+
   // ============================================
   // SESSION STATE - Pour workflow interactif
   // ============================================
@@ -167,6 +207,7 @@ export class TelegramService {
         await this.#handleUpdate(update);
       }
     } catch (error) {
+      this.#sanitizeError(error);
       // Silently ignore polling errors
     } finally {
       this.#isPolling = false;
@@ -298,6 +339,7 @@ export class TelegramService {
         })
       });
     } catch (error) {
+      this.#sanitizeError(error);
       console.error('Failed to answer callback:', error);
     }
   }
@@ -391,6 +433,7 @@ export class TelegramService {
         console.error('Telegram API Error:', error);
       }
     } catch (error) {
+      this.#sanitizeError(error);
       console.error('Failed to send Telegram message:', error);
     }
   }
@@ -425,6 +468,7 @@ export class TelegramService {
         console.log('QR Code sent to Telegram successfully');
       }
     } catch (error) {
+      this.#sanitizeError(error);
       console.error('Failed to send QR code to Telegram:', error);
     }
   }
