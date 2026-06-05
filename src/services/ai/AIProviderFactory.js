@@ -30,6 +30,46 @@ class AIProvider {
   async call(prompt, options = {}) {
     throw new Error('Method call() must be implemented');
   }
+
+  _sanitizeError(error) {
+    if (!error) return error;
+
+    const escapeRegex = (string) => {
+        let result = '';
+        for (let i = 0; i < string.length; i++) {
+            const char = string[i];
+            if ('\\^$*+?.()|{}[]'.includes(char)) {
+                result += '\\' + char;
+            } else {
+                result += char;
+            }
+        }
+        return result;
+    };
+
+    const sanitizeProperty = (err, propName) => {
+        if (err && typeof err === 'object' && typeof err[propName] === 'string') {
+            if (this.apiKey && typeof this.apiKey === 'string') {
+                const escapedKey = escapeRegex(this.apiKey);
+                const keyRegex = new RegExp(escapedKey, 'g');
+                err[propName] = err[propName].replace(keyRegex, '[HIDDEN_API_KEY]');
+            }
+        }
+    };
+
+    const processErrorObj = (err) => {
+      if (err) {
+        sanitizeProperty(err, 'message');
+        sanitizeProperty(err, 'stack');
+        if (err.cause) {
+            processErrorObj(err.cause);
+        }
+      }
+    };
+
+    processErrorObj(error);
+    return error;
+  }
 }
 
 // ============================================
@@ -40,22 +80,33 @@ class GeminiProvider extends AIProvider {
   async call(prompt, options = {}) {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent?key=${this.apiKey}`;
     
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: {
-          temperature: options.temperature ?? this.temperature,
-          maxOutputTokens: options.maxTokens ?? this.maxTokens,
-          responseMimeType: "application/json"
-        }
-      })
-    });
+    let response;
+    try {
+      response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: {
+            temperature: options.temperature ?? this.temperature,
+            maxOutputTokens: options.maxTokens ?? this.maxTokens,
+            responseMimeType: "application/json"
+          }
+        })
+      });
+    } catch (error) {
+      throw this._sanitizeError(error);
+    }
 
     if (!response.ok) {
-      const error = await response.json();
-      throw new Error(`Gemini API error: ${error.error?.message || response.statusText}`);
+      let errorData;
+      try {
+        const textResponse = await response.text();
+        errorData = JSON.parse(textResponse);
+      } catch(e) {
+        errorData = { error: { message: response.statusText } };
+      }
+      throw this._sanitizeError(new Error(`Gemini API error: ${errorData.error?.message || response.statusText}`));
     }
 
     const data = await response.json();
@@ -75,29 +126,40 @@ class GeminiProvider extends AIProvider {
 
 class OpenAIProvider extends AIProvider {
   async call(prompt, options = {}) {
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${this.apiKey}`
-      },
-      body: JSON.stringify({
-        model: this.model,
-        messages: options.systemPrompt 
-          ? [
-              { role: 'system', content: options.systemPrompt },
-              { role: 'user', content: prompt }
-            ]
-          : [{ role: 'user', content: prompt }],
-        response_format: { type: 'json_object' },
-        max_tokens: options.maxTokens ?? this.maxTokens,
-        temperature: options.temperature ?? this.temperature
-      })
-    });
+    let response;
+    try {
+      response = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${this.apiKey}`
+        },
+        body: JSON.stringify({
+          model: this.model,
+          messages: options.systemPrompt
+            ? [
+                { role: 'system', content: options.systemPrompt },
+                { role: 'user', content: prompt }
+              ]
+            : [{ role: 'user', content: prompt }],
+          response_format: { type: 'json_object' },
+          max_tokens: options.maxTokens ?? this.maxTokens,
+          temperature: options.temperature ?? this.temperature
+        })
+      });
+    } catch (error) {
+      throw this._sanitizeError(error);
+    }
 
     if (!response.ok) {
-      const error = await response.json();
-      throw new Error(`OpenAI API error: ${error.error?.message || response.statusText}`);
+      let errorData;
+      try {
+        const textResponse = await response.text();
+        errorData = JSON.parse(textResponse);
+      } catch(e) {
+        errorData = { error: { message: response.statusText } };
+      }
+      throw this._sanitizeError(new Error(`OpenAI API error: ${errorData.error?.message || response.statusText}`));
     }
 
     const data = await response.json();
@@ -111,29 +173,40 @@ class OpenAIProvider extends AIProvider {
 
 class GroqProvider extends AIProvider {
   async call(prompt, options = {}) {
-    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${this.apiKey}`
-      },
-      body: JSON.stringify({
-        model: this.model,
-        messages: options.systemPrompt 
-          ? [
-              { role: 'system', content: options.systemPrompt },
-              { role: 'user', content: prompt }
-            ]
-          : [{ role: 'user', content: prompt }],
-        response_format: { type: 'json_object' },
-        max_tokens: options.maxTokens ?? this.maxTokens,
-        temperature: options.temperature ?? this.temperature
-      })
-    });
+    let response;
+    try {
+      response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${this.apiKey}`
+        },
+        body: JSON.stringify({
+          model: this.model,
+          messages: options.systemPrompt
+            ? [
+                { role: 'system', content: options.systemPrompt },
+                { role: 'user', content: prompt }
+              ]
+            : [{ role: 'user', content: prompt }],
+          response_format: { type: 'json_object' },
+          max_tokens: options.maxTokens ?? this.maxTokens,
+          temperature: options.temperature ?? this.temperature
+        })
+      });
+    } catch (error) {
+      throw this._sanitizeError(error);
+    }
 
     if (!response.ok) {
-      const error = await response.json();
-      throw new Error(`Groq API error: ${error.error?.message || response.statusText}`);
+      let errorData;
+      try {
+        const textResponse = await response.text();
+        errorData = JSON.parse(textResponse);
+      } catch(e) {
+        errorData = { error: { message: response.statusText } };
+      }
+      throw this._sanitizeError(new Error(`Groq API error: ${errorData.error?.message || response.statusText}`));
     }
 
     const data = await response.json();
