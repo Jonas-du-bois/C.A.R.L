@@ -129,6 +129,15 @@ export class MessageRepository {
     `).get(messageId);
   }
 
+  /**
+   * Lightweight check to see if a message exists
+   * Faster than getMessageById as it avoids JOINs and full record retrieval
+   */
+  messageExists(messageId) {
+    const result = this.#db.prepare('SELECT 1 FROM messages WHERE message_id = ?').get(messageId);
+    return result !== undefined;
+  }
+
   getMessageByInternalId(id) {
     return this.#db.prepare(`
       SELECT m.*, c.phone_number, c.push_name, c.display_name
