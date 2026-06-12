@@ -57,6 +57,9 @@ export class Application {
     this.#logger = new Logger();
     this.#db = new SQLiteDatabase(this.#config);
     this.#queue = new QueueService({ concurrency: 3 });
+
+    // Nettoyage périodique pour éviter les fuites de mémoire (DoS protection)
+    setInterval(() => this.#cleanupGroupTimestamps(), 5 * 60 * 1000).unref();
   }
 
   /**
@@ -339,6 +342,18 @@ export class Application {
     }
     
     return false;
+  }
+
+  /**
+   * Nettoie les anciens timestamps des groupes pour éviter les fuites de mémoire (DoS protection)
+   */
+  #cleanupGroupTimestamps() {
+    const now = Date.now();
+    for (const [groupId, timestamp] of this.#groupMessageTimestamps.entries()) {
+      if (now - timestamp > 30000) {
+        this.#groupMessageTimestamps.delete(groupId);
+      }
+    }
   }
 
   /**
