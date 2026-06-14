@@ -27,3 +27,8 @@
 **Vulnerability:** Denial of Service (DoS) via memory exhaustion in `GatekeeperHandler`. The handler stored user timestamps in an unbounded `Map` without cleanup, allowing an attacker to exhaust server memory by sending messages from many unique identifiers.
 **Learning:** Any stateful mechanism tracking user activity (like rate limits) must implement a cleanup strategy (TTL or periodic purge) to prevent unbounded growth.
 **Prevention:** Implemented a periodic `cleanup()` task in `GatekeeperHandler` that removes users with no recent activity every 5 minutes.
+
+## 2026-06-14 - Native Fetch Errors Leaking API Keys
+**Vulnerability:** Native `fetch` failures in Node.js (e.g., connection refused, DNS resolution failed) throw a `TypeError: fetch failed` where the underlying system error (and the requested URL containing API keys for services like Gemini) is nested within the error's `cause` property. Logging or re-throwing these errors directly leaked API keys.
+**Learning:** Native `fetch` error structures are complex and contain nested `cause` properties that must be recursively traversed when redacting secrets.
+**Prevention:** Wrapped all `fetch` calls in `safeFetch` wrappers that catch errors and recursively sanitize the error object (including `.cause`) by replacing the API key with `[HIDDEN_TOKEN]`.

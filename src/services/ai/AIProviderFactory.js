@@ -30,6 +30,45 @@ class AIProvider {
   async call(prompt, options = {}) {
     throw new Error('Method call() must be implemented');
   }
+
+  _sanitizeError(error) {
+    if (!error) return error;
+
+    let errorString = '';
+    if (error instanceof Error) {
+      errorString = error.message;
+      if (error.stack) errorString += '\n' + error.stack;
+      if (error.cause) {
+        errorString += '\nCause: ' + this._sanitizeError(error.cause);
+      }
+    } else {
+      errorString = String(error);
+    }
+
+    if (this.apiKey && typeof this.apiKey === 'string') {
+      let escapedApiKey = '';
+      for (let i = 0; i < this.apiKey.length; i++) {
+        const char = this.apiKey[i];
+        if ('\\^$*+?.()|{}[]'.includes(char)) {
+          escapedApiKey += '\\' + char;
+        } else {
+          escapedApiKey += char;
+        }
+      }
+      const regex = new RegExp(escapedApiKey, 'g');
+      return errorString.replace(regex, '[HIDDEN_TOKEN]');
+    }
+
+    return errorString;
+  }
+
+  async _safeFetch(url, options) {
+    try {
+      return await fetch(url, options);
+    } catch (error) {
+      throw new Error(this._sanitizeError(error));
+    }
+  }
 }
 
 // ============================================
@@ -40,7 +79,7 @@ class GeminiProvider extends AIProvider {
   async call(prompt, options = {}) {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent?key=${this.apiKey}`;
     
-    const response = await fetch(url, {
+    const response = await this._safeFetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -75,7 +114,7 @@ class GeminiProvider extends AIProvider {
 
 class OpenAIProvider extends AIProvider {
   async call(prompt, options = {}) {
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    const response = await this._safeFetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -111,7 +150,7 @@ class OpenAIProvider extends AIProvider {
 
 class GroqProvider extends AIProvider {
   async call(prompt, options = {}) {
-    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    const response = await this._safeFetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
