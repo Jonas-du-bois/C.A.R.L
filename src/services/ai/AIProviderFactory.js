@@ -27,6 +27,62 @@ class AIProvider {
    * @param {Object} options - Options supplémentaires
    * @returns {Promise<string>} Réponse brute
    */
+  _sanitizeError(error) {
+    if (!this.apiKey || typeof this.apiKey !== 'string') return error;
+    let escapedToken = '';
+    for (let i = 0; i < this.apiKey.length; i++) {
+        const char = this.apiKey[i];
+        if ('\\^$*+?.()|{}[]'.includes(char)) escapedToken += '\\' + char;
+        else escapedToken += char;
+    }
+    const tokenRegex = new RegExp(escapedToken, 'gi');
+    const sanitizeStr = (str) => typeof str === 'string' ? str.replace(tokenRegex, '[HIDDEN_TOKEN]') : str;
+
+    // Create a new error object to avoid read-only property issues (like DOMException)
+    const sanitizedError = new Error(sanitizeStr(error.message));
+    sanitizedError.name = error.name;
+
+    if (error.stack) {
+       sanitizedError.stack = sanitizeStr(error.stack);
+    }
+
+    const processCause = (cause) => {
+        if (!cause) return cause;
+        if (cause instanceof Error) {
+            const newCause = new Error(sanitizeStr(cause.message));
+            newCause.name = cause.name;
+            if (cause.stack) newCause.stack = sanitizeStr(cause.stack);
+            if (cause.cause) newCause.cause = processCause(cause.cause);
+            return newCause;
+        } else if (typeof cause === 'object') {
+            const newObj = { ...cause };
+            if (newObj.message) newObj.message = sanitizeStr(newObj.message);
+            if (newObj.stack) newObj.stack = sanitizeStr(newObj.stack);
+            if (newObj.url) newObj.url = sanitizeStr(newObj.url);
+            if (newObj.cause) newObj.cause = processCause(newObj.cause);
+            return newObj;
+        } else if (typeof cause === 'string') {
+            return sanitizeStr(cause);
+        }
+        return cause;
+    };
+
+    if (error.cause) {
+        sanitizedError.cause = processCause(error.cause);
+    }
+
+    return sanitizedError;
+  }
+
+  async safeFetch(url, options) {
+    try {
+      const globalFetch = globalThis.fetch || fetch;
+      return await globalFetch(url, options);
+    } catch (error) {
+      throw this._sanitizeError(error);
+    }
+  }
+
   async call(prompt, options = {}) {
     throw new Error('Method call() must be implemented');
   }
@@ -40,7 +96,7 @@ class GeminiProvider extends AIProvider {
   async call(prompt, options = {}) {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent?key=${this.apiKey}`;
     
-    const response = await fetch(url, {
+    const response = await this.safeFetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -75,7 +131,7 @@ class GeminiProvider extends AIProvider {
 
 class OpenAIProvider extends AIProvider {
   async call(prompt, options = {}) {
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    const response = await this.safeFetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -111,7 +167,7 @@ class OpenAIProvider extends AIProvider {
 
 class GroqProvider extends AIProvider {
   async call(prompt, options = {}) {
-    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    const response = await this.safeFetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
