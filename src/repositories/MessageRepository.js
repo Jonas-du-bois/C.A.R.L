@@ -642,9 +642,10 @@ export class MessageRepository {
    */
   getTopContacts(limit = 10) {
     return this.#db.prepare(`
+      -- ⚡ Bolt: Optimized query to use pre-calculated columns instead of correlated subqueries
       SELECT c.*, 
-        (SELECT COUNT(*) FROM messages m WHERE m.contact_id = c.id AND m.direction = 'incoming') as messages_received,
-        (SELECT COUNT(*) FROM messages m WHERE m.contact_id = c.id AND m.direction = 'outgoing') as messages_sent
+        c.total_messages_received as messages_received,
+        c.total_messages_sent as messages_sent
       FROM contacts c
       ORDER BY (c.total_messages_received + c.total_messages_sent) DESC
       LIMIT ?
