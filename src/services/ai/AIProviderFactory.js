@@ -30,6 +30,40 @@ class AIProvider {
   async call(prompt, options = {}) {
     throw new Error('Method call() must be implemented');
   }
+
+  _sanitizeError(error) {
+    if (!this.apiKey || typeof this.apiKey !== 'string') return error;
+
+    let escapedKey = "";
+    for (let i = 0; i < this.apiKey.length; i++) {
+      const char = this.apiKey[i];
+      if ('^$*+?.()|{}[]\\'.includes(char)) {
+        escapedKey += '\\' + char;
+      } else {
+        escapedKey += char;
+      }
+    }
+
+    const regex = new RegExp(escapedKey, 'g');
+
+    const sanitize = (err) => {
+      if (!err) return err;
+      if (err.message) err.message = err.message.replace(regex, '[HIDDEN_TOKEN]');
+      if (err.stack) err.stack = err.stack.replace(regex, '[HIDDEN_TOKEN]');
+      if (err.cause) sanitize(err.cause);
+      return err;
+    };
+
+    return sanitize(error);
+  }
+
+  async _safeFetch(url, options) {
+    try {
+      return await fetch(url, options);
+    } catch (error) {
+      throw this._sanitizeError(error);
+    }
+  }
 }
 
 // ============================================
@@ -40,7 +74,7 @@ class GeminiProvider extends AIProvider {
   async call(prompt, options = {}) {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent?key=${this.apiKey}`;
     
-    const response = await fetch(url, {
+    const response = await this._safeFetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -75,7 +109,7 @@ class GeminiProvider extends AIProvider {
 
 class OpenAIProvider extends AIProvider {
   async call(prompt, options = {}) {
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    const response = await this._safeFetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -111,7 +145,7 @@ class OpenAIProvider extends AIProvider {
 
 class GroqProvider extends AIProvider {
   async call(prompt, options = {}) {
-    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    const response = await this._safeFetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

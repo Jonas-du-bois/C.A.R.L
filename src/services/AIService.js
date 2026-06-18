@@ -131,10 +131,44 @@ export class AIService {
     }
   }
 
+  #sanitizeError(error) {
+    if (!this.#apiKey || typeof this.#apiKey !== 'string') return error;
+
+    let escapedKey = "";
+    for (let i = 0; i < this.#apiKey.length; i++) {
+      const char = this.#apiKey[i];
+      if ('^$*+?.()|{}[]\\'.includes(char)) {
+        escapedKey += '\\' + char;
+      } else {
+        escapedKey += char;
+      }
+    }
+
+    const regex = new RegExp(escapedKey, 'g');
+
+    const sanitize = (err) => {
+      if (!err) return err;
+      if (err.message) err.message = err.message.replace(regex, '[HIDDEN_TOKEN]');
+      if (err.stack) err.stack = err.stack.replace(regex, '[HIDDEN_TOKEN]');
+      if (err.cause) sanitize(err.cause);
+      return err;
+    };
+
+    return sanitize(error);
+  }
+
+  async #safeFetch(url, options) {
+    try {
+      return await fetch(url, options);
+    } catch (error) {
+      throw this.#sanitizeError(error);
+    }
+  }
+
   async #callGemini(userPrompt) {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${this.#model}:generateContent?key=${this.#apiKey}`;
     
-    const response = await fetch(url, {
+    const response = await this.#safeFetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -165,7 +199,7 @@ export class AIService {
   }
 
   async #callOpenAI(userPrompt) {
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    const response = await this.#safeFetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -193,7 +227,7 @@ export class AIService {
   }
 
   async #callGroq(userPrompt) {
-    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    const response = await this.#safeFetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -297,7 +331,7 @@ Return a JSON object with a single "summary" field containing a concise French s
   async #callGeminiBriefing(prompt) {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${this.#model}:generateContent?key=${this.#apiKey}`;
     
-    const response = await fetch(url, {
+    const response = await this.#safeFetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -329,7 +363,7 @@ Return a JSON object with a single "summary" field containing a concise French s
       ? 'https://api.groq.com/openai/v1/chat/completions'
       : 'https://api.openai.com/v1/chat/completions';
 
-    const response = await fetch(endpoint, {
+    const response = await this.#safeFetch(endpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -490,7 +524,7 @@ IMPORTANT:
   async #callGeminiExtraction(prompt) {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${this.#model}:generateContent?key=${this.#apiKey}`;
     
-    const response = await fetch(url, {
+    const response = await this.#safeFetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -517,7 +551,7 @@ IMPORTANT:
       ? 'https://api.groq.com/openai/v1/chat/completions'
       : 'https://api.openai.com/v1/chat/completions';
 
-    const response = await fetch(endpoint, {
+    const response = await this.#safeFetch(endpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -675,7 +709,7 @@ Génère un JSON avec:
   async #callGeminiCompact(prompt) {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${this.#model}:generateContent?key=${this.#apiKey}`;
     
-    const response = await fetch(url, {
+    const response = await this.#safeFetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -702,7 +736,7 @@ Génère un JSON avec:
       ? 'https://api.groq.com/openai/v1/chat/completions'
       : 'https://api.openai.com/v1/chat/completions';
 
-    const response = await fetch(endpoint, {
+    const response = await this.#safeFetch(endpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -1029,7 +1063,7 @@ RÈGLES FINALES IMPORTANTES:
   async #callGeminiReport(prompt) {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${this.#model}:generateContent?key=${this.#apiKey}`;
     
-    const response = await fetch(url, {
+    const response = await this.#safeFetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -1056,7 +1090,7 @@ RÈGLES FINALES IMPORTANTES:
       ? 'https://api.groq.com/openai/v1/chat/completions'
       : 'https://api.openai.com/v1/chat/completions';
 
-    const response = await fetch(endpoint, {
+    const response = await this.#safeFetch(endpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
