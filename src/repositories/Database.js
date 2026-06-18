@@ -189,6 +189,8 @@ export class SQLiteDatabase {
       -- ⚡ Bolt: Composite index to optimize frequent chat history lookups (filtering by contact + sorting by time)
       CREATE INDEX IF NOT EXISTS idx_messages_contact_received ON messages(contact_id, received_at DESC);
       CREATE INDEX IF NOT EXISTS idx_messages_direction ON messages(direction);
+      -- ⚡ Bolt: Composite index to optimize queries filtering by direction and sorting by time
+      CREATE INDEX IF NOT EXISTS idx_messages_direction_received ON messages(direction, received_at ASC);
       CREATE INDEX IF NOT EXISTS idx_messages_message_id ON messages(message_id);
       CREATE INDEX IF NOT EXISTS idx_message_analysis_urgency ON message_analysis(urgency);
       CREATE INDEX IF NOT EXISTS idx_message_analysis_category ON message_analysis(category);
