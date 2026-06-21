@@ -120,6 +120,13 @@ export class MessageRepository {
     return result.lastInsertRowid;
   }
 
+  /**
+   * Vérifie si un message existe (plus léger que getMessageById)
+   */
+  messageExists(messageId) {
+    return this.#db.prepare('SELECT 1 FROM messages WHERE message_id = ?').get(messageId) !== undefined;
+  }
+
   getMessageById(messageId) {
     return this.#db.prepare(`
       SELECT m.*, c.phone_number, c.push_name, c.display_name
