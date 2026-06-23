@@ -30,3 +30,11 @@
 ## 2026-03-02 - Caching External API Calls for Frequent Schedule Lookups
 **Learning:** `CalendarService.getUpcomingEvents` was calling the Google Calendar API on every request, even for subsequent checks within the same conversation session. This caused significant latency and redundant API usage. By implementing a short-lived (5-minute) cache with a default fetch range (14 days), multiple queries (e.g., availability check -> slot proposal -> conflict check) can be served from memory.
 **Action:** Implement `eventsCache` in `CalendarService` with invalidation on write operations (`createEvent`, `createTask`). This reduces N API calls to 1 per 5 minutes for schedule-related queries, improving response time and reducing quota usage.
+
+## 2026-06-23 - Optimizing Duplicate Message Checks
+**Learning:**  checked for duplicate messages by calling , which performed a heavy  combined with a  on the contacts table. This fetched entire object records into memory unnecessarily on the critical hot path of every incoming and outgoing message, solely to verify existence.
+**Action:** Implemented  in  using a lightweight  query (). Benchmarks demonstrated that  is ~3.11x faster than  with a JOIN (~107ms vs ~334ms for 10000 operations). Always use  or  instead of selecting full rows when only checking for the presence of a record.
+
+## 2026-06-23 - Optimizing Duplicate Message Checks
+**Learning:** `Application.js` checked for duplicate messages by calling `getMessageById`, which performed a heavy `SELECT *` combined with a `LEFT JOIN` on the contacts table. This fetched entire object records into memory unnecessarily on the critical hot path of every incoming and outgoing message, solely to verify existence.
+**Action:** Implemented `messageExists` in `MessageRepository.js` using a lightweight `SELECT 1` query (`SELECT 1 FROM messages WHERE message_id = ?`). Benchmarks demonstrated that `messageExists` is ~3.11x faster than `getMessageById` with a JOIN (~107ms vs ~334ms for 10000 operations). Always use `SELECT 1` or `EXISTS` instead of selecting full rows when only checking for the presence of a record.
