@@ -27,3 +27,8 @@
 **Vulnerability:** Denial of Service (DoS) via memory exhaustion in `GatekeeperHandler`. The handler stored user timestamps in an unbounded `Map` without cleanup, allowing an attacker to exhaust server memory by sending messages from many unique identifiers.
 **Learning:** Any stateful mechanism tracking user activity (like rate limits) must implement a cleanup strategy (TTL or periodic purge) to prevent unbounded growth.
 **Prevention:** Implemented a periodic `cleanup()` task in `GatekeeperHandler` that removes users with no recent activity every 5 minutes.
+
+## $(date +%Y-%m-%d) - Prevent API Key Leakage in Fetch Network Errors
+**Vulnerability:** IDOR/Data Leakage risk in `AIProviderFactory`. Native `fetch` requests embedded API keys in the URL (for Gemini) or in the `Authorization` header. If a network error occurred (e.g., DNS resolution failure or connection refused), Node.js native `fetch` threw a `TypeError: fetch failed` where the underlying system error and the requested URL were nested within the error's `cause` property. If these errors were logged, the secret API key would be leaked in plain text.
+**Learning:** Native Node.js `fetch` errors can inadvertently expose sensitive data like request URLs and headers through nested error properties like `cause` and `errors`. We cannot rely on basic error handling to obscure sensitive information.
+**Prevention:** Always wrap native `fetch` calls in a secure `safeFetch` wrapper method when sensitive data is part of the request. The wrapper should catch network errors and recursively sanitize the error object (`message`, `stack`, `cause`, `errors`), regex-escaping the sensitive token and replacing it with a placeholder (e.g., `[HIDDEN_TOKEN]`) before re-throwing.
