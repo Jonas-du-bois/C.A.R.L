@@ -120,6 +120,18 @@ export class MessageRepository {
     return result.lastInsertRowid;
   }
 
+  /**
+   * Vérifie si un message existe via son ID (Optimisé, sans JOIN)
+   * @param {string} messageId - ID externe du message (ex: WhatsApp ID)
+   * @returns {boolean} True si le message existe
+   */
+  messageExists(messageId) {
+    const result = this.#db.prepare(`
+      SELECT 1 FROM messages WHERE message_id = ? LIMIT 1
+    `).get(messageId);
+    return !!result;
+  }
+
   getMessageById(messageId) {
     return this.#db.prepare(`
       SELECT m.*, c.phone_number, c.push_name, c.display_name
