@@ -223,7 +223,7 @@ export class Application {
         }
 
         // Éviter les doublons - vérifier si le message existe déjà
-        const existingMessage = messageRepo.getMessageById(msg.id.id);
+        const existingMessage = messageRepo.messageExists(msg.id.id);
         if (existingMessage) {
           return; // Message déjà sauvegardé, ignorer silencieusement
         }
@@ -270,7 +270,7 @@ export class Application {
         if (chat?.isGroup) return;
 
         // Éviter les doublons - vérifier si le message existe déjà
-        const existingMessage = messageRepo.getMessageById(msg.id.id);
+        const existingMessage = messageRepo.messageExists(msg.id.id);
         if (existingMessage) {
           return; // Message déjà sauvegardé, ignorer silencieusement
         }
