@@ -30,6 +30,59 @@ class AIProvider {
   async call(prompt, options = {}) {
     throw new Error('Method call() must be implemented');
   }
+
+  /**
+   * Wraps the native fetch call to intercept errors and sanitize any leaked API keys.
+   * Node.js fetch errors often include the requested URL or headers which could leak credentials.
+   */
+  async safeFetch(url, options = {}) {
+    try {
+      return await fetch(url, options);
+    } catch (error) {
+      if (this.apiKey && typeof this.apiKey === 'string') {
+        // Dynamically create a safe regex for the API key
+        let escapedToken = '';
+        for (let i = 0; i < this.apiKey.length; i++) {
+          const char = this.apiKey[i];
+          if ('\\^$*+?.()|{}[]'.includes(char)) {
+            escapedToken += '\\' + char;
+          } else {
+            escapedToken += char;
+          }
+        }
+        const tokenRegex = new RegExp(escapedToken, 'g');
+
+        const sanitizeError = (err) => {
+          if (!err) return err;
+          let newErr = err;
+
+          // Handle DOMException which has a read-only message property
+          try {
+            if (typeof err.message === 'string') {
+              err.message = err.message.replace(tokenRegex, '[HIDDEN_TOKEN]');
+            }
+          } catch (e) {
+            // If message is read-only (e.g. DOMException), create a new Error
+            newErr = new Error(err.message.replace(tokenRegex, '[HIDDEN_TOKEN]'));
+            newErr.name = err.name;
+          }
+
+          if (typeof err.stack === 'string') {
+            newErr.stack = err.stack.replace(tokenRegex, '[HIDDEN_TOKEN]');
+          }
+
+          if (err.cause) {
+            newErr.cause = sanitizeError(err.cause);
+          }
+
+          return newErr;
+        };
+
+        throw sanitizeError(error);
+      }
+      throw error;
+    }
+  }
 }
 
 // ============================================
@@ -40,7 +93,7 @@ class GeminiProvider extends AIProvider {
   async call(prompt, options = {}) {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent?key=${this.apiKey}`;
     
-    const response = await fetch(url, {
+    const response = await this.safeFetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -75,7 +128,7 @@ class GeminiProvider extends AIProvider {
 
 class OpenAIProvider extends AIProvider {
   async call(prompt, options = {}) {
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    const response = await this.safeFetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -111,7 +164,7 @@ class OpenAIProvider extends AIProvider {
 
 class GroqProvider extends AIProvider {
   async call(prompt, options = {}) {
-    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    const response = await this.safeFetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
