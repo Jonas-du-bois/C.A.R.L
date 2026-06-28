@@ -27,3 +27,8 @@
 **Vulnerability:** Denial of Service (DoS) via memory exhaustion in `GatekeeperHandler`. The handler stored user timestamps in an unbounded `Map` without cleanup, allowing an attacker to exhaust server memory by sending messages from many unique identifiers.
 **Learning:** Any stateful mechanism tracking user activity (like rate limits) must implement a cleanup strategy (TTL or periodic purge) to prevent unbounded growth.
 **Prevention:** Implemented a periodic `cleanup()` task in `GatekeeperHandler` that removes users with no recent activity every 5 minutes.
+
+## $(date +%Y-%m-%d) - Prevent API key leakage in fetch network errors
+**Vulnerability:** Native Node.js `fetch` errors (e.g. `TypeError: fetch failed` due to timeouts or network refusals) often embed the requested URL inside their `message`, `stack`, or nested `cause` properties. Since `AIProviderFactory.js` constructs API endpoints with query parameters like `?key=${this.apiKey}`, a network failure could leak the API key into standard system logs or unhandled exception reports.
+**Learning:** Hardcoded strings or regex patterns on error wrappers must account for readonly object properties. `fetch` timeouts return a `DOMException` whose `message` getter is readonly. Attempting to sanitize it via direct mutation (`err.message = ...`) caused a strict-mode crash, highlighting the need to recreate immutable error boundaries when sanitizing.
+**Prevention:** Implemented a wrapper `safeFetch` in `AIProviderFactory` that uses dynamic regex escaping to strip `this.apiKey` from the `message`, `stack`, and recursively from `cause`. The sanitizer traps readonly assignment exceptions and falls back to generating a standard `Error` clone that retains the safe message and original stack trace.
