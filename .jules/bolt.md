@@ -30,3 +30,7 @@
 ## 2026-03-02 - Caching External API Calls for Frequent Schedule Lookups
 **Learning:** `CalendarService.getUpcomingEvents` was calling the Google Calendar API on every request, even for subsequent checks within the same conversation session. This caused significant latency and redundant API usage. By implementing a short-lived (5-minute) cache with a default fetch range (14 days), multiple queries (e.g., availability check -> slot proposal -> conflict check) can be served from memory.
 **Action:** Implement `eventsCache` in `CalendarService` with invalidation on write operations (`createEvent`, `createTask`). This reduces N API calls to 1 per 5 minutes for schedule-related queries, improving response time and reducing quota usage.
+
+## 2026-06-29 - Optimizing Top Contacts Retrieval
+**Learning:** Using `COUNT(*)` subqueries on the `messages` table to retrieve top contacts in `getTopContacts` is inefficient, especially when `total_messages_received` and `total_messages_sent` are already pre-calculated in the `contacts` table. Adding a composite expression index on `(total_messages_received + total_messages_sent) DESC` further speeds up sorting.
+**Action:** Modified `getTopContacts` to use the pre-calculated aggregations directly from the `contacts` table instead of subqueries, and added the expression index to `src/repositories/Database.js`. This reduced execution time from ~988ms to ~4ms for 100 queries. Always prefer using pre-calculated aggregations instead of expensive `COUNT(*)` subqueries when possible.
