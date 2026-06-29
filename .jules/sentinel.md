@@ -27,3 +27,8 @@
 **Vulnerability:** Denial of Service (DoS) via memory exhaustion in `GatekeeperHandler`. The handler stored user timestamps in an unbounded `Map` without cleanup, allowing an attacker to exhaust server memory by sending messages from many unique identifiers.
 **Learning:** Any stateful mechanism tracking user activity (like rate limits) must implement a cleanup strategy (TTL or periodic purge) to prevent unbounded growth.
 **Prevention:** Implemented a periodic `cleanup()` task in `GatekeeperHandler` that removes users with no recent activity every 5 minutes.
+
+## $(date +%Y-%m-%d) - Fetch Error API Key Leakage
+**Vulnerability:** IDOR/Credential Leakage risk via native fetch in `AIProviderFactory.js` and `AIService.js`. When a native `fetch` request fails (e.g. DNS error or timeout), Node throws a `TypeError: fetch failed`. For Gemini, the API key is passed in the URL, which might be leaked in the error's message, stack, or nested `cause` property.
+**Learning:** Native `fetch` errors can expose sensitive URL parameters (like API keys) in their stack traces or `cause` objects. We must proactively sanitize these properties. Furthermore, Node.js `DOMException` error messages are read-only and must be replaced by new `Error` objects during sanitization.
+**Prevention:** Implemented a wrapper `#safeFetch` around all AI provider API calls. This wrapper explicitly sanitizes the error `message`, `stack`, and recursive `cause` objects, escaping the API key string and replacing it with a hidden placeholder before re-throwing.

@@ -30,6 +30,88 @@ class AIProvider {
   async call(prompt, options = {}) {
     throw new Error('Method call() must be implemented');
   }
+
+  /**
+   * Helper to execute fetch calls securely and sanitize errors to avoid leaking API keys.
+   */
+  async safeFetch(url, options) {
+    try {
+      const response = await fetch(url, options);
+      if (!response.ok) {
+        let errorData = '';
+        try {
+          const json = await response.json();
+          errorData = JSON.stringify(json);
+        } catch {
+          errorData = await response.text();
+        }
+
+        let errorMsg = `API Error: ${response.statusText} - ${errorData}`;
+
+        // Sanitize error message to prevent API key leakage
+        if (this.apiKey) {
+          // Escape API key for regex
+          let escapedKey = '';
+          for (const char of this.apiKey) {
+            escapedKey += '\\^$*+?.()|{}[]'.includes(char) ? '\\' + char : char;
+          }
+          errorMsg = errorMsg.replace(new RegExp(escapedKey, 'g'), '[HIDDEN_API_KEY]');
+        }
+        throw new Error(errorMsg);
+      }
+      return response;
+    } catch (error) {
+      // Re-throw if it's already an error we created
+      if (error.message && error.message.startsWith('API Error')) {
+        throw error;
+      }
+
+      let errorMsg = error.message;
+      if (this.apiKey && errorMsg) {
+         let escapedKey = '';
+         for (const char of this.apiKey) {
+           escapedKey += '\\^$*+?.()|{}[]'.includes(char) ? '\\' + char : char;
+         }
+         errorMsg = errorMsg.replace(new RegExp(escapedKey, 'g'), '[HIDDEN_API_KEY]');
+      }
+
+      // Node.js DOMException message is read-only, so we create a new generic Error
+      const newError = new Error(errorMsg);
+      newError.stack = error.stack;
+      if (this.apiKey && newError.stack) {
+        let escapedKey = '';
+        for (const char of this.apiKey) {
+          escapedKey += '\\^$*+?.()|{}[]'.includes(char) ? '\\' + char : char;
+        }
+        newError.stack = newError.stack.replace(new RegExp(escapedKey, 'g'), '[HIDDEN_API_KEY]');
+      }
+
+      // Sanitize cause recursively if needed, for fetch failures
+      if (error.cause) {
+         const causeErr = error.cause;
+         let causeMsg = causeErr.message;
+         if (this.apiKey && causeMsg) {
+           let escapedKey = '';
+           for (const char of this.apiKey) {
+             escapedKey += '\\^$*+?.()|{}[]'.includes(char) ? '\\' + char : char;
+           }
+           causeMsg = causeMsg.replace(new RegExp(escapedKey, 'g'), '[HIDDEN_API_KEY]');
+         }
+         const newCause = new Error(causeMsg);
+         newCause.stack = causeErr.stack;
+         if (this.apiKey && newCause.stack) {
+            let escapedKey = '';
+            for (const char of this.apiKey) {
+              escapedKey += '\\^$*+?.()|{}[]'.includes(char) ? '\\' + char : char;
+            }
+            newCause.stack = newCause.stack.replace(new RegExp(escapedKey, 'g'), '[HIDDEN_API_KEY]');
+         }
+         newError.cause = newCause;
+      }
+
+      throw newError;
+    }
+  }
 }
 
 // ============================================
@@ -40,7 +122,7 @@ class GeminiProvider extends AIProvider {
   async call(prompt, options = {}) {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent?key=${this.apiKey}`;
     
-    const response = await fetch(url, {
+    const response = await this.safeFetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -75,7 +157,7 @@ class GeminiProvider extends AIProvider {
 
 class OpenAIProvider extends AIProvider {
   async call(prompt, options = {}) {
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    const response = await this.safeFetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -111,7 +193,7 @@ class OpenAIProvider extends AIProvider {
 
 class GroqProvider extends AIProvider {
   async call(prompt, options = {}) {
-    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    const response = await this.safeFetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
