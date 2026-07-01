@@ -21,6 +21,66 @@ class AIProvider {
     this.temperature = temperature;
   }
 
+  #sanitizeError(error) {
+    if (!this.apiKey || typeof this.apiKey !== 'string') return error;
+
+    let escapedKey = '';
+    for (let i = 0; i < this.apiKey.length; i++) {
+      const char = this.apiKey[i];
+      if ('^$*+?.()|{}[]\\'.includes(char)) {
+        escapedKey += '\\' + char;
+      } else {
+        escapedKey += char;
+      }
+    }
+    const regex = new RegExp(escapedKey, 'g');
+    const hidden = '[HIDDEN_TOKEN]';
+
+    const sanitizeStr = (str) => {
+      if (typeof str !== 'string') return str;
+      return str.replace(regex, hidden);
+    };
+
+    const sanitize = (err) => {
+      if (!err) return err;
+
+      let newErr = err;
+      try {
+        if (err.message && typeof err.message === 'string') {
+          err.message = sanitizeStr(err.message);
+        }
+      } catch (e) {
+        newErr = new Error(sanitizeStr(err.message));
+        newErr.name = err.name;
+        newErr.stack = sanitizeStr(err.stack);
+      }
+
+      if (newErr.stack && typeof newErr.stack === 'string') {
+        try { newErr.stack = sanitizeStr(newErr.stack); } catch(e){}
+      }
+
+      if (err.cause) {
+        newErr.cause = sanitize(err.cause);
+      }
+
+      if (newErr.errors && Array.isArray(newErr.errors)) {
+        newErr.errors = newErr.errors.map(e => sanitize(e));
+      }
+
+      return newErr;
+    };
+
+    return sanitize(error);
+  }
+
+  async safeFetch(url, options) {
+    try {
+      return await fetch(url, options);
+    } catch (error) {
+      throw this.#sanitizeError(error);
+    }
+  }
+
   /**
    * Envoie un prompt et retourne la réponse
    * @param {string} prompt - Le prompt à envoyer
@@ -40,7 +100,7 @@ class GeminiProvider extends AIProvider {
   async call(prompt, options = {}) {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent?key=${this.apiKey}`;
     
-    const response = await fetch(url, {
+    const response = await this.safeFetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -75,7 +135,7 @@ class GeminiProvider extends AIProvider {
 
 class OpenAIProvider extends AIProvider {
   async call(prompt, options = {}) {
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    const response = await this.safeFetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -111,7 +171,7 @@ class OpenAIProvider extends AIProvider {
 
 class GroqProvider extends AIProvider {
   async call(prompt, options = {}) {
-    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    const response = await this.safeFetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

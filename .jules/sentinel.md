@@ -27,3 +27,8 @@
 **Vulnerability:** Denial of Service (DoS) via memory exhaustion in `GatekeeperHandler`. The handler stored user timestamps in an unbounded `Map` without cleanup, allowing an attacker to exhaust server memory by sending messages from many unique identifiers.
 **Learning:** Any stateful mechanism tracking user activity (like rate limits) must implement a cleanup strategy (TTL or periodic purge) to prevent unbounded growth.
 **Prevention:** Implemented a periodic `cleanup()` task in `GatekeeperHandler` that removes users with no recent activity every 5 minutes.
+
+## $(date +%Y-%m-%d) - AI Provider API Key Leakage via Error Logs
+**Vulnerability:** When a network error (like timeout or connection refused) occurred during \`fetch\` calls to AI providers, the unhandled network exception's message, stack trace, and \`.cause\` objects frequently contained the full requested URL, which embeds the API key as a query parameter (e.g., Gemini) or in headers. If these errors were caught and logged by the application (via \`logger.error\`), it led to API key leakage.
+**Learning:** Native \`fetch\` error objects (such as \`DOMException\` or \`TypeError\` with nested \`AggregateError\`) can leak sensitive URL parameters. Masking secrets must be applied recursively on all properties of caught exceptions before they bubble up.
+**Prevention:** Implemented a secure wrapper \`safeFetch\` in \`AIProviderFactory\` and \`AIService\` that catches exceptions from \`fetch\`, dynamically constructs a sanitized version of the error using regex masking of the active \`apiKey\`, and then re-throws the sanitized error.
