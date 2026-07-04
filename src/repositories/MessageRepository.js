@@ -629,8 +629,10 @@ export class MessageRepository {
     return this.#db.prepare(`
       SELECT
         (SELECT COUNT(*) FROM contacts) as total_contacts,
-        (SELECT COUNT(*) FROM messages WHERE direction = 'incoming') as total_messages_received,
-        (SELECT COUNT(*) FROM messages WHERE direction = 'outgoing') as total_messages_sent,
+        -- Opt: Use pre-calculated aggregates on contacts table instead of COUNT(*) on messages
+        -- table to avoid expensive full table scans. Reduces query time massively for large datasets.
+        (SELECT COALESCE(SUM(total_messages_received), 0) FROM contacts) as total_messages_received,
+        (SELECT COALESCE(SUM(total_messages_sent), 0) FROM contacts) as total_messages_sent,
         (SELECT COUNT(*) FROM message_analysis) as total_analyzed,
         (SELECT COUNT(*) FROM errors) as total_errors,
         (SELECT SUM(tokens_used) FROM message_analysis) as total_tokens_used
