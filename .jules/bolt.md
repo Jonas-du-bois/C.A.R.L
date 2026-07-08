@@ -30,3 +30,6 @@
 ## 2026-03-02 - Caching External API Calls for Frequent Schedule Lookups
 **Learning:** `CalendarService.getUpcomingEvents` was calling the Google Calendar API on every request, even for subsequent checks within the same conversation session. This caused significant latency and redundant API usage. By implementing a short-lived (5-minute) cache with a default fetch range (14 days), multiple queries (e.g., availability check -> slot proposal -> conflict check) can be served from memory.
 **Action:** Implement `eventsCache` in `CalendarService` with invalidation on write operations (`createEvent`, `createTask`). This reduces N API calls to 1 per 5 minutes for schedule-related queries, improving response time and reducing quota usage.
+## 2026-07-08 - Optimizing Reporting Queries with Composite Indexes
+**Learning:** SQLite query performance for retrieving messages for reports was suboptimal because it filtered by direction and sorted by received_at. Without a composite index, SQLite has to use a temporary B-tree for sorting.
+**Action:** Added CREATE INDEX IF NOT EXISTS idx_messages_direction_received ON messages(direction, received_at ASC); to src/repositories/Database.js. This avoids the temp b-tree sort and improves query performance significantly.
