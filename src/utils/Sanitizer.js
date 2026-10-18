@@ -28,3 +28,33 @@ export function escapeHtml(unsafe) {
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#039;");
 }
+
+/**
+ * A safe fetch wrapper that sanitizes API keys from error messages, specifically handling DOMException.
+ * @param {string|URL|Request} input
+ * @param {RequestInit} [init]
+ * @returns {Promise<Response>}
+ */
+export async function safeFetch(input, init) {
+  try {
+    return await fetch(input, init);
+  } catch (err) {
+    const message = err.message || '';
+    // Look for common API key patterns (e.g., `key=...` or `Bearer ...`)
+    const sanitizedMessage = message.replace(/(key=)[^&\s]+|([B|b]earer\s+)[^\s]+/g, '$1$2[REDACTED]');
+
+    // Some Fetch errors (like AbortError) are DOMException which has a read-only message property
+    try {
+      err.message = sanitizedMessage;
+      if (err.stack) {
+        err.stack = err.stack.replace(/(key=)[^&\s]+|([B|b]earer\s+)[^\s]+/g, '$1$2[REDACTED]');
+      }
+    } catch (readonlyErr) {
+      const sanitizedErr = new Error(sanitizedMessage);
+      sanitizedErr.name = err.name;
+      sanitizedErr.stack = err.stack?.replace(/(key=)[^&\s]+|([B|b]earer\s+)[^\s]+/g, '$1$2[REDACTED]');
+      throw sanitizedErr;
+    }
+    throw err;
+  }
+}
