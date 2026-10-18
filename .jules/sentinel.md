@@ -27,3 +27,9 @@
 **Vulnerability:** Denial of Service (DoS) via memory exhaustion in `GatekeeperHandler`. The handler stored user timestamps in an unbounded `Map` without cleanup, allowing an attacker to exhaust server memory by sending messages from many unique identifiers.
 **Learning:** Any stateful mechanism tracking user activity (like rate limits) must implement a cleanup strategy (TTL or periodic purge) to prevent unbounded growth.
 **Prevention:** Implemented a periodic `cleanup()` task in `GatekeeperHandler` that removes users with no recent activity every 5 minutes.
+
+
+## 2026-10-18 - Unsanitized Network Errors Leaking API Keys
+**Vulnerability:** The `fetch` calls in `AIService` and `AIProviderFactory` appended API keys directly in the URL (e.g., `?key=...`). If a network error occurred (like a DNS failure or timeout), the native `fetch` threw a `TypeError` or `DOMException` containing the full URL, exposing the API key in error messages and stack traces (which are typically captured by loggers).
+**Learning:** Native `fetch` errors include the request URL. When secrets are passed via query parameters, unhandled or unsanitized network exceptions become a critical leak vector. Additionally, in Node.js (V8), modifying an `Error`'s `message` property does not automatically update its stringified `stack` trace; both must be explicitly sanitized.
+**Prevention:** Implemented and enforced a `safeFetch` wrapper in `src/utils/Sanitizer.js` that catches network exceptions, scrubs known secret patterns (`key=`, `Bearer`) from both the `message` and `stack` properties, and safely clones read-only errors (like `DOMException`) before re-throwing.
