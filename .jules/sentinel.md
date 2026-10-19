@@ -27,3 +27,8 @@
 **Vulnerability:** Denial of Service (DoS) via memory exhaustion in `GatekeeperHandler`. The handler stored user timestamps in an unbounded `Map` without cleanup, allowing an attacker to exhaust server memory by sending messages from many unique identifiers.
 **Learning:** Any stateful mechanism tracking user activity (like rate limits) must implement a cleanup strategy (TTL or periodic purge) to prevent unbounded growth.
 **Prevention:** Implemented a periodic `cleanup()` task in `GatekeeperHandler` that removes users with no recent activity every 5 minutes.
+
+## 2024-05-29 - API Key Leak in Error Logs
+**Vulnerability:** API keys (Gemini, OpenAI, Groq) and Telegram bot tokens were embedded in URLs during `fetch` calls. If a network error occurred (e.g. timeout, DNS failure), the native `fetch` exception could expose the URL containing the secret in stack traces or error messages, which might then be logged or returned to the user.
+**Learning:** Native `fetch` errors can leak sensitive URL parameters. Error messages and stack traces must be sanitized before being thrown or logged. Furthermore, `fetch` can throw `DOMException` objects where the `message` property is read-only, requiring careful handling to preserve error information while sanitizing.
+**Prevention:** Created a `safeFetch` wrapper in `src/utils/Sanitizer.js` that catches network errors, sanitizes error messages and stacks by redacting provided secrets, and handles read-only error properties by creating a new `Error` object. Replaced all sensitive `fetch` calls with `safeFetch`.
