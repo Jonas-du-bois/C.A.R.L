@@ -28,3 +28,47 @@ export function escapeHtml(unsafe) {
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#039;");
 }
+
+/**
+ * A safe wrapper for fetch that prevents sensitive tokens from leaking in error messages and stacks.
+ * @param {string|URL} url - The URL to fetch
+ * @param {Object} options - Fetch options
+ * @param {Array<string>} sensitiveTokens - Array of tokens to redact from errors
+ * @returns {Promise<Response>}
+ */
+export async function safeFetch(url, options, sensitiveTokens = []) {
+  try {
+    return await fetch(url, options);
+  } catch (error) {
+    let sanitizedMessage = error.message || '';
+    let sanitizedStack = error.stack || '';
+
+    if (sensitiveTokens && sensitiveTokens.length > 0) {
+      for (const token of sensitiveTokens) {
+        if (!token) continue;
+        let escapedToken = '';
+        for (let i = 0; i < token.length; i++) {
+          if ('\\^$*+?.()|{}[]'.includes(token[i])) {
+            escapedToken += '\\';
+          }
+          escapedToken += token[i];
+        }
+        const regex = new RegExp(escapedToken, 'g');
+        sanitizedMessage = sanitizedMessage.replace(regex, '[REDACTED]');
+        sanitizedStack = sanitizedStack.replace(regex, '[REDACTED]');
+      }
+    }
+
+    try {
+      error.message = sanitizedMessage;
+      if (error.stack) error.stack = sanitizedStack;
+      throw error;
+    } catch (e) {
+      // Handle DOMException or other errors where message is read-only
+      const newError = new Error(sanitizedMessage);
+      newError.name = error.name;
+      newError.stack = sanitizedStack;
+      throw newError;
+    }
+  }
+}
