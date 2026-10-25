@@ -177,39 +177,39 @@ export class MessageHandler {
 
   async #handleActions(analysis, rawMessage, messageDbId) {
     if (analysis.action === 'calendar_event' && this.#calendar) {
-      this.#repo.createAction(messageDbId, 'calendar_event', { body: rawMessage.body });
+      const actionId = this.#repo.createAction(messageDbId, 'calendar_event', { body: rawMessage.body });
       
       try {
         // Use structured event details if available, otherwise fallback to message body
         const eventData = analysis.event_details || rawMessage.body;
         const result = await this.#calendar.createEvent(eventData);
 
-        this.#repo.updateActionStatus(messageDbId, 'completed', JSON.stringify(result));
+        this.#repo.updateActionStatus(actionId, 'completed', JSON.stringify(result));
         this.#logger.info('Calendar event created', { result });
       } catch (error) {
-        this.#repo.updateActionStatus(messageDbId, 'failed', error.message);
+        this.#repo.updateActionStatus(actionId, 'failed', error.message);
         throw error;
       }
     }
 
     if (analysis.action === 'notify_admin' && this.#telegram) {
-      this.#repo.createAction(messageDbId, 'notify_admin', { from: rawMessage.from });
+      const actionId = this.#repo.createAction(messageDbId, 'notify_admin', { from: rawMessage.from });
       
       await this.#telegram.sendMessage(
         `🚨 Urgent message from ${escapeHtml(rawMessage.from)}:\n\n${escapeHtml(rawMessage.body)}`
       );
       
-      this.#repo.updateActionStatus(messageDbId, 'completed');
+      this.#repo.updateActionStatus(actionId, 'completed');
     }
 
     if (analysis.urgency === 'critical' && this.#telegram) {
-      this.#repo.createAction(messageDbId, 'critical_alert', { urgency: analysis.urgency });
+      const actionId = this.#repo.createAction(messageDbId, 'critical_alert', { urgency: analysis.urgency });
       
       await this.#telegram.sendMessage(
         `⚠️ Critical urgency detected from ${escapeHtml(rawMessage.from)}:\n\n${escapeHtml(rawMessage.body)}`
       );
       
-      this.#repo.updateActionStatus(messageDbId, 'completed');
+      this.#repo.updateActionStatus(actionId, 'completed');
     }
   }
 

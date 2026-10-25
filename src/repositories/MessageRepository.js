@@ -329,12 +329,15 @@ export class MessageRepository {
 
   /**
    * Crée une action à exécuter
+   * @returns {number} Identifiant numérique de l'action créée
    */
   createAction(messageDbId, actionType, actionData = null) {
-    return this.#db.prepare(`
+    const info = this.#db.prepare(`
       INSERT INTO actions (message_id, action_type, action_data)
       VALUES (?, ?, ?)
     `).run(messageDbId, actionType, actionData ? JSON.stringify(actionData) : null);
+
+    return Number(info.lastInsertRowid);
   }
 
   updateActionStatus(actionId, status, result = null) {

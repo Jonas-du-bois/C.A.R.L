@@ -256,6 +256,64 @@ describe('MessageRepository Integration', () => {
     });
   });
 
+  describe('Actions', () => {
+    it('should return a numeric action id and update only that action', () => {
+      const contact = repository.findOrCreateContact('user1@s.whatsapp.net');
+      const firstMessageId = repository.saveIncomingMessage(new Message({
+        id: 'msg-action-1',
+        from: 'user1@s.whatsapp.net',
+        body: 'First',
+        timestamp: Date.now()
+      }), contact.id);
+      const secondMessageId = repository.saveIncomingMessage(new Message({
+        id: 'msg-action-2',
+        from: 'user1@s.whatsapp.net',
+        body: 'Second',
+        timestamp: Date.now()
+      }), contact.id);
+
+      const actionId = repository.createAction(secondMessageId, 'notify_admin', { source: 'test' });
+
+      assert.strictEqual(typeof actionId, 'number');
+      assert.notStrictEqual(actionId, secondMessageId);
+
+      repository.updateActionStatus(actionId, 'completed', 'done');
+
+      const action = db.prepare(
+        'SELECT * FROM actions WHERE id = ?'
+      ).get(actionId);
+      const firstMessageActions = db.prepare(
+        'SELECT * FROM actions WHERE message_id = ?'
+      ).all(firstMessageId);
+
+      assert.strictEqual(action.status, 'completed');
+      assert.strictEqual(action.result, 'done');
+      assert.strictEqual(action.message_id, secondMessageId);
+      assert.strictEqual(firstMessageActions.length, 0);
+    });
+
+    it('should record failed action status and result', () => {
+      const contact = repository.findOrCreateContact('user1@s.whatsapp.net');
+      const messageId = repository.saveIncomingMessage(new Message({
+        id: 'msg-action-failed',
+        from: 'user1@s.whatsapp.net',
+        body: 'Failure',
+        timestamp: Date.now()
+      }), contact.id);
+      const actionId = repository.createAction(messageId, 'calendar_event');
+
+      repository.updateActionStatus(actionId, 'failed', 'calendar unavailable');
+
+      const action = db.prepare(
+        'SELECT status, result FROM actions WHERE id = ?'
+      ).get(actionId);
+      assert.deepStrictEqual(action, {
+        status: 'failed',
+        result: 'calendar unavailable'
+      });
+    });
+  });
+
   describe('Statistics', () => {
     it('should generate daily stats', () => {
       const contact = repository.findOrCreateContact('user1@s.whatsapp.net');
