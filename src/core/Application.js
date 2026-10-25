@@ -95,6 +95,18 @@ export class Application {
     return this.#whatsapp?.isReady || false;
   }
 
+  get healthDependencies() {
+    const telegram = this.#config.telegram;
+    const google = this.#config.google;
+    return {
+      whatsapp: this.isWhatsAppReady,
+      database: this.#db.isHealthy(),
+      ai: this.#config.ai.configured,
+      telegram: Boolean(telegram.botToken && telegram.adminId),
+      calendar: Boolean(this.#config.features.enableCalendar && google.serviceAccountJson)
+    };
+  }
+
   // ============================================
   // INITIALISATION DES SERVICES
   // ============================================

@@ -135,6 +135,13 @@ restent acceptées comme alias dépréciés et déclenchent un avertissement san
 afficher leur valeur. Lorsque les deux fonctionnalités automatiques sont
 désactivées, C.A.R.L. peut démarrer en mode économique sans clé IA ni Telegram.
 
+### Healthcheck
+
+`GET /health` renvoie un rapport JSON détaillé. `healthy` et `degraded`
+répondent avec HTTP 200 ; `unhealthy` répond avec HTTP 503 lorsqu'une erreur de
+base de données est détectée. WhatsApp, l'IA, Telegram et Calendar indisponibles
+sont non critiques et produisent donc `degraded`.
+
 ## 📖 Documentation
 
 - [Technical Design Document](docs/Technical%20design%20document.md)
