@@ -27,3 +27,7 @@
 **Vulnerability:** Denial of Service (DoS) via memory exhaustion in `GatekeeperHandler`. The handler stored user timestamps in an unbounded `Map` without cleanup, allowing an attacker to exhaust server memory by sending messages from many unique identifiers.
 **Learning:** Any stateful mechanism tracking user activity (like rate limits) must implement a cleanup strategy (TTL or periodic purge) to prevent unbounded growth.
 **Prevention:** Implemented a periodic `cleanup()` task in `GatekeeperHandler` that removes users with no recent activity every 5 minutes.
+## 2026-10-25 - DOMException in Strict Mode
+**Vulnerability:** Fetch API can throw `DOMException` on network failure, leaking URLs with embedded secrets in the error message and stack trace.
+**Learning:** `DOMException`'s `message` property is a read-only getter. Attempting to directly reassign `err.message` in strict mode throws a TypeError.
+**Prevention:** Wrap error message sanitization in a `try...catch`. If reassignment fails, fallback to creating a new standard `Error` object that preserves the sanitized message and the original stack trace.
