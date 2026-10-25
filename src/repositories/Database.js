@@ -345,4 +345,13 @@ export class SQLiteDatabase {
       this.#db.close();
     }
   }
+
+  isHealthy() {
+    try {
+      this.#db.prepare('SELECT 1').get();
+      return true;
+    } catch {
+      return false;
+    }
+  }
 }

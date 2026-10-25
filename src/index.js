@@ -1,4 +1,5 @@
 import { Application } from './core/Application.js';
+import { buildHealthReport, getHealthHttpStatus } from './utils/Health.js';
 import http from 'http';
 
 const app = new Application();
@@ -7,12 +8,9 @@ const app = new Application();
 const PORT = process.env.PORT || 10000;
 const healthServer = http.createServer((req, res) => {
   if (req.url === '/health') {
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ 
-      status: 'ok', 
-      timestamp: new Date().toISOString(),
-      whatsapp: app.isWhatsAppReady ? 'connected' : 'disconnected'
-    }));
+    const report = buildHealthReport(app.healthDependencies);
+    res.writeHead(getHealthHttpStatus(report), { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(report));
   } else {
     res.writeHead(404);
     res.end('Not Found');
@@ -24,3 +22,5 @@ healthServer.listen(PORT, () => {
 });
 
 app.start();
+
+export { buildHealthReport };

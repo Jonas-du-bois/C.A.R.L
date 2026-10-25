@@ -1,7 +1,53 @@
 import dotenv from 'dotenv';
 import { ConfigurationError } from '../utils/Errors.js';
+import { validateTimezone } from '../utils/DateTime.js';
 
 dotenv.config();
+
+const DEFAULTS = {
+  timezone: 'Europe/Paris',
+  maxTokens: 500,
+  temperature: 0.3,
+  dailyBriefingTime: '0 8 * * *',
+  calendarId: 'primary'
+};
+
+function readPositiveInteger(name, fallback, alias) {
+  const raw = process.env[name] ?? (alias ? process.env[alias] : undefined);
+  const value = raw === undefined ? fallback : Number(raw);
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new ConfigurationError(`${name} must be a positive integer`);
+  }
+  if (raw !== undefined && alias && process.env[name] === undefined) {
+    console.warn(`${alias} is deprecated; use ${name}`);
+  }
+  return value;
+}
+
+function readNumberInRange(name, fallback, min, max, alias) {
+  const raw = process.env[name] ?? (alias ? process.env[alias] : undefined);
+  const value = raw === undefined ? fallback : Number(raw);
+  if (!Number.isFinite(value) || value < min || value > max) {
+    throw new ConfigurationError(`${name} must be a number between ${min} and ${max}`);
+  }
+  if (raw !== undefined && alias && process.env[name] === undefined) {
+    console.warn(`${alias} is deprecated; use ${name}`);
+  }
+  return value;
+}
+
+function readBoolean(name, fallback) {
+  const raw = process.env[name];
+  if (raw === undefined) return fallback;
+  if (raw !== 'true' && raw !== 'false') {
+    throw new ConfigurationError(`${name} must be either true or false`);
+  }
+  return raw === 'true';
+}
+
+function validateCronExpression(value) {
+  return /^([\d*/?,\-]+\s+){4,5}[\d*/?,\-]+$/.test(value.trim());
+}
 
 export class Config {
   constructor() {
@@ -9,71 +55,112 @@ export class Config {
   }
 
   validate() {
-    // AI provider is required (either Gemini, OpenAI, or Groq)
-    const hasAI = process.env.GEMINI_API_KEY || 
-                  process.env.OPENAI_API_KEY || 
-                  process.env.GROQ_API_KEY;
-    
-    if (!hasAI) {
-      throw new ConfigurationError('At least one AI API key is required (GEMINI_API_KEY, OPENAI_API_KEY, or GROQ_API_KEY)');
-    }
+    const features = this.features;
+    const aiKeys = [
+      process.env.GEMINI_API_KEY,
+      process.env.GROQ_API_KEY,
+      process.env.OPENAI_API_KEY
+    ].filter(Boolean);
 
-    if (!process.env.DATABASE_PATH) {
+    if (!process.env.DATABASE_PATH?.trim()) {
       throw new ConfigurationError('Missing required environment variable: DATABASE_PATH');
     }
+    if (!features.enableAutoResponse && !features.enableDailyBriefing) {
+      // Economic mode deliberately permits operation without AI or Telegram.
+    } else if (!aiKeys.length && features.enableAutoResponse) {
+      throw new ConfigurationError(
+        'An AI API key is required when ENABLE_AUTO_RESPONSE=true'
+      );
+    }
+    if ((features.enableDailyBriefing || features.enableAutoResponse) &&
+        (!process.env.TELEGRAM_BOT_TOKEN || !process.env.TELEGRAM_ADMIN_ID)) {
+      throw new ConfigurationError(
+        'TELEGRAM_BOT_TOKEN and TELEGRAM_ADMIN_ID are required when reports or alerts are enabled'
+      );
+    }
+
+    const timezone = this.timezone;
+    if (!validateTimezone(timezone)) {
+      throw new ConfigurationError(`APP_TIMEZONE is invalid: ${timezone}`);
+    }
+
+    const googleJson = this.google.serviceAccountJson;
+    if (googleJson) {
+      try {
+        const credentials = JSON.parse(googleJson);
+        if (!credentials || typeof credentials !== 'object' || Array.isArray(credentials)) {
+          throw new Error('not an object');
+        }
+      } catch {
+        throw new ConfigurationError('GOOGLE_SERVICE_ACCOUNT_JSON must contain valid JSON');
+      }
+    }
+
+    if (!validateCronExpression(features.dailyBriefingTime)) {
+      throw new ConfigurationError(
+        'DAILY_BRIEFING_TIME must be a valid 5- or 6-field cron expression'
+      );
+    }
+
+    readPositiveInteger('AI_MAX_TOKENS', DEFAULTS.maxTokens, 'OPENAI_MAX_TOKENS');
+    readNumberInRange('AI_TEMPERATURE', DEFAULTS.temperature, 0, 2, 'OPENAI_TEMPERATURE');
   }
 
   get ai() {
-    // Priority: Gemini (free) > Groq (free) > OpenAI (paid)
-    if (process.env.GEMINI_API_KEY) {
+    const providerConfig = [
+      ['gemini', process.env.GEMINI_API_KEY, process.env.GEMINI_MODEL || 'gemini-2.0-flash'],
+      ['groq', process.env.GROQ_API_KEY, process.env.GROQ_MODEL || 'llama-3.1-70b-versatile'],
+      ['openai', process.env.OPENAI_API_KEY, process.env.OPENAI_MODEL || 'gpt-4o']
+    ].find(([, apiKey]) => apiKey);
+
+    if (!providerConfig) {
       return {
-        provider: 'gemini',
-        apiKey: process.env.GEMINI_API_KEY,
-        model: process.env.GEMINI_MODEL || 'gemini-1.5-flash',
-        maxTokens: parseInt(process.env.AI_MAX_TOKENS || '500'),
-        temperature: parseFloat(process.env.AI_TEMPERATURE || '0.3')
+        configured: false,
+        provider: null,
+        apiKey: null,
+        model: null,
+        maxTokens: readPositiveInteger('AI_MAX_TOKENS', DEFAULTS.maxTokens, 'OPENAI_MAX_TOKENS'),
+        temperature: readNumberInRange('AI_TEMPERATURE', DEFAULTS.temperature, 0, 2, 'OPENAI_TEMPERATURE')
       };
     }
-    
-    if (process.env.GROQ_API_KEY) {
-      return {
-        provider: 'groq',
-        apiKey: process.env.GROQ_API_KEY,
-        model: process.env.GROQ_MODEL || 'llama-3.1-70b-versatile',
-        maxTokens: parseInt(process.env.AI_MAX_TOKENS || '500'),
-        temperature: parseFloat(process.env.AI_TEMPERATURE || '0.3')
-      };
-    }
-    
+
+    const [provider, apiKey, model] = providerConfig;
     return {
-      provider: 'openai',
-      apiKey: process.env.OPENAI_API_KEY,
-      model: process.env.OPENAI_MODEL || 'gpt-4o',
-      maxTokens: parseInt(process.env.AI_MAX_TOKENS || process.env.OPENAI_MAX_TOKENS || '500'),
-      temperature: parseFloat(process.env.AI_TEMPERATURE || process.env.OPENAI_TEMPERATURE || '0.3')
+      configured: true,
+      provider,
+      apiKey,
+      model,
+      maxTokens: readPositiveInteger('AI_MAX_TOKENS', DEFAULTS.maxTokens, 'OPENAI_MAX_TOKENS'),
+      temperature: readNumberInRange('AI_TEMPERATURE', DEFAULTS.temperature, 0, 2, 'OPENAI_TEMPERATURE')
     };
   }
 
-  // Keep for backward compatibility
   get openai() {
     return {
       apiKey: process.env.OPENAI_API_KEY,
-      model: process.env.OPENAI_MODEL,
-      maxTokens: parseInt(process.env.OPENAI_MAX_TOKENS || '500'),
-      temperature: parseFloat(process.env.OPENAI_TEMPERATURE || '0.3')
+      model: process.env.OPENAI_MODEL || 'gpt-4o',
+      maxTokens: readPositiveInteger('AI_MAX_TOKENS', DEFAULTS.maxTokens, 'OPENAI_MAX_TOKENS'),
+      temperature: readNumberInRange('AI_TEMPERATURE', DEFAULTS.temperature, 0, 2, 'OPENAI_TEMPERATURE')
     };
   }
 
   get database() {
-    return {
-      path: process.env.DATABASE_PATH
-    };
+    return { path: process.env.DATABASE_PATH };
+  }
+
+  get timezone() {
+    return process.env.APP_TIMEZONE || DEFAULTS.timezone;
   }
 
   get google() {
+    let serviceAccountJson = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
+    if (!serviceAccountJson && process.env.GOOGLE_SERVICE_ACCOUNT_KEY) {
+      console.warn('GOOGLE_SERVICE_ACCOUNT_KEY is deprecated; use GOOGLE_SERVICE_ACCOUNT_JSON');
+      serviceAccountJson = process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
+    }
     return {
-      serviceAccountJson: process.env.GOOGLE_SERVICE_ACCOUNT_JSON,
-      calendarId: process.env.GOOGLE_CALENDAR_ID || 'primary'
+      serviceAccountJson,
+      calendarId: process.env.GOOGLE_CALENDAR_ID || DEFAULTS.calendarId
     };
   }
 
@@ -87,15 +174,16 @@ export class Config {
 
   get features() {
     return {
-      enableDailyBriefing: process.env.ENABLE_DAILY_BRIEFING === 'true',
-      dailyBriefingTime: process.env.DAILY_BRIEFING_TIME || '0 8 * * *',
-      enableAutoResponse: process.env.ENABLE_AUTO_RESPONSE === 'true',
-      enableCalendar: process.env.ENABLE_CALENDAR_INTEGRATION === 'true'
+      enableDailyBriefing: readBoolean('ENABLE_DAILY_BRIEFING', false),
+      dailyBriefingTime: process.env.DAILY_BRIEFING_TIME || DEFAULTS.dailyBriefingTime,
+      enableAutoResponse: readBoolean('ENABLE_AUTO_RESPONSE', false),
+      enableCalendar: readBoolean('ENABLE_CALENDAR_INTEGRATION', false)
     };
   }
 
   get whatsapp() {
     return {
+      sessionPath: process.env.WHATSAPP_SESSION_PATH || './data/.wwebjs_auth',
       puppeteer: {
         args: [
           '--no-sandbox',
