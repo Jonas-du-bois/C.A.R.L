@@ -105,7 +105,9 @@ export class Application {
    */
   #initializeServices() {
     const messageRepo = new MessageRepository(this.#db);
-    const aiService = new AIService(this.#config);
+    const aiService = this.#config.ai.configured
+      ? new AIService(this.#config)
+      : null;
     const calendarService = new CalendarService(this.#config);
     
     this.#telegramService = new TelegramService(this.#config);
@@ -122,7 +124,11 @@ export class Application {
     this.#whatsapp = new WhatsAppService(this.#config);
     const gatekeeper = new GatekeeperHandler();
 
-    this.#logger.info(`Using AI provider: ${this.#config.ai.provider} (${this.#config.ai.model})`);
+    this.#logger.info(
+      this.#config.ai.configured
+        ? `Using AI provider: ${this.#config.ai.provider} (${this.#config.ai.model})`
+        : 'AI provider not configured; economic mode enabled'
+    );
 
     const messageHandler = new MessageHandler({
       gatekeeper,
@@ -505,4 +511,3 @@ export class Application {
     process.on('SIGINT', () => shutdown('SIGINT'));
   }
 }
-

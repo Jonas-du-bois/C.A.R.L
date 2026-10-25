@@ -103,25 +103,37 @@ docker compose up -d
 ### Variables d'environnement
 
 ```env
-# IA (choisir un provider)
-AI_PROVIDER=gemini          # gemini, openai, ou groq
-GEMINI_API_KEY=xxx          # Gratuit !
-# OPENAI_API_KEY=xxx
-# GROQ_API_KEY=xxx
+# Base et fuseau
+DATABASE_PATH=/app/data/carl.db
+APP_TIMEZONE=Europe/Paris
+WHATSAPP_SESSION_PATH=/app/data/.wwebjs_auth
 
-# Telegram
+# IA : une clé est nécessaire pour ENABLE_AUTO_RESPONSE=true
+GEMINI_API_KEY=xxx
+# GROQ_API_KEY=xxx
+# OPENAI_API_KEY=xxx
+AI_MAX_TOKENS=500
+AI_TEMPERATURE=0.3
+
+# Telegram : requis pour les rapports ou alertes
 TELEGRAM_BOT_TOKEN=xxx
-TELEGRAM_CHAT_ID=xxx
+TELEGRAM_ADMIN_ID=xxx
+# TELEGRAM_ALLOWED_USER_ID=xxx  # défaut : TELEGRAM_ADMIN_ID
 
 # Google Calendar (optionnel)
-GOOGLE_CALENDAR_ID=xxx
-GOOGLE_SERVICE_ACCOUNT_KEY=xxx
+GOOGLE_CALENDAR_ID=primary
+GOOGLE_SERVICE_ACCOUNT_JSON=xxx
 
 # Fonctionnalités
-ENABLE_AUTO_RESPONSE=false  # Mode économique
-ENABLE_DAILY_BRIEFING=true
-DAILY_BRIEFING_TIME=0 8 * * *  # 8h00
+ENABLE_AUTO_RESPONSE=false
+ENABLE_DAILY_BRIEFING=false
+DAILY_BRIEFING_TIME=0 8 * * *
 ```
+
+`OPENAI_MAX_TOKENS`, `OPENAI_TEMPERATURE` et `GOOGLE_SERVICE_ACCOUNT_KEY`
+restent acceptées comme alias dépréciés et déclenchent un avertissement sans
+afficher leur valeur. Lorsque les deux fonctionnalités automatiques sont
+désactivées, C.A.R.L. peut démarrer en mode économique sans clé IA ni Telegram.
 
 ## 📖 Documentation
 

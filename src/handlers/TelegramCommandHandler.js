@@ -161,7 +161,9 @@ export class TelegramCommandHandler {
       const status = 
         `🤖 <b>État C.A.R.L.</b>\n\n` +
         `📱 WhatsApp: ${whatsappStatus}\n` +
-        `🧠 IA: ${this.#config.ai.provider} (${this.#config.ai.model})\n` +
+        `🧠 IA: ${this.#config.ai.configured
+          ? `${this.#config.ai.provider} (${this.#config.ai.model})`
+          : 'non configurée'}\n` +
         `⏰ Uptime: ${this.#formatUptime(process.uptime())}`;
 
       await this.#telegram.sendMessage(status);
