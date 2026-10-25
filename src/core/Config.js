@@ -70,6 +70,10 @@ export class Config {
     };
   }
 
+  get timezone() {
+    return process.env.APP_TIMEZONE || 'Europe/Paris';
+  }
+
   get google() {
     return {
       serviceAccountJson: process.env.GOOGLE_SERVICE_ACCOUNT_JSON,

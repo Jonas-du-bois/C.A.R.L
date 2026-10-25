@@ -8,6 +8,7 @@
  */
 
 import { escapeHtml } from '../utils/Sanitizer.js';
+import { formatDateInput, parseUserDate } from '../utils/DateTime.js';
 
 // ============================================
 // CONSTANTES
@@ -30,12 +31,6 @@ const ACTIVITY_DURATIONS = {
   réunion: 60,
   meeting: 60
 };
-
-/**
- * Jours de la semaine en français
- */
-const JOURS_SEMAINE = ['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi'];
-const JOURS_SEMAINE_SHORT = ['dim', 'lun', 'mar', 'mer', 'jeu', 'ven', 'sam'];
 
 // ============================================
 // CLASSE PRINCIPALE
@@ -779,8 +774,16 @@ export class TelegramCommandHandler {
         pending.event.start = new Date();
       }
       
-      // Correction timezone: Docker UTC -> Europe/Zurich (UTC+1)
-      pending.event.start.setHours(hour - 1, min, 0, 0);
+      const timezone = this.#config.timezone || 'Europe/Paris';
+      const parsedTime = parseUserDate(
+        `${formatDateInput(pending.event.start, timezone)} ${hour}:${String(min).padStart(2, '0')}`,
+        { now: pending.event.start, timezone }
+      );
+      if (parsedTime.status !== 'ok') {
+        await this.#telegram.sendMessage('❌ Cette heure est inexistante ou ambiguë dans le fuseau configuré.');
+        return;
+      }
+      pending.event.start = parsedTime.date;
       
       // Revérifier les conflits
       const calendarService = this.#cronService.getCalendarService();
@@ -897,77 +900,13 @@ export class TelegramCommandHandler {
   /**
    * Parse une date en français vers un objet Date
    * @param {string} dateStr - La chaîne de date à parser
-   * @param {boolean} correctTimezone - Si true, corrige le décalage horaire UTC -> Europe/Zurich
    * @returns {Date|null}
    */
-  #parseDate(dateStr, correctTimezone = true) {
-    if (!dateStr) return null;
-
-    const now = new Date();
-    const lower = dateStr.toLowerCase();
-    let targetDate = new Date(now);
-    let isToday = true; // Par défaut, on considère que c'est aujourd'hui
-
-    // Chercher un jour de la semaine
-    for (let i = 0; i < JOURS_SEMAINE.length; i++) {
-      if (lower.includes(JOURS_SEMAINE[i]) || lower.includes(JOURS_SEMAINE_SHORT[i])) {
-        const currentDay = now.getDay();
-        let daysToAdd = i - currentDay;
-        if (daysToAdd <= 0) daysToAdd += 7;
-        targetDate.setDate(now.getDate() + daysToAdd);
-        isToday = false;
-        break;
-      }
-    }
-
-    // Mots-clés temporels
-    if (lower.includes('demain')) {
-      targetDate.setDate(now.getDate() + 1);
-      isToday = false;
-    }
-    if (lower.includes("aujourd'hui")) {
-      targetDate = new Date(now);
-      isToday = true;
-    }
-
-    // "Ce soir" = aujourd'hui à 20h par défaut
-    const isCeSoir = lower.includes('ce soir') || lower.includes('soir');
-    const isMatin = lower.includes('matin');
-    if (isCeSoir) {
-      targetDate = new Date(now);
-      isToday = true;
-    }
-
-    // Parser l'heure (ex: "20h", "20h30", "14:30")
-    const heureMatch = lower.match(/(\d{1,2})[h:](\d{2})?/);
-    if (heureMatch) {
-      let hours = parseInt(heureMatch[1]);
-      const minutes = parseInt(heureMatch[2] || '0');
-
-      // Correction timezone: Docker UTC -> Europe/Zurich (UTC+1)
-      if (correctTimezone) {
-        hours = hours - 1;
-        if (hours < 0) hours += 24;
-      }
-
-      targetDate.setHours(hours, minutes, 0, 0);
-    } else if (isCeSoir) {
-      // "Ce soir" sans heure précise = 20h par défaut
-      targetDate.setHours(correctTimezone ? 19 : 20, 0, 0, 0);
-    } else if (isMatin) {
-      // "Matin" sans heure précise = 10h par défaut
-      targetDate.setHours(correctTimezone ? 9 : 10, 0, 0, 0);
-    } else if (isToday) {
-      // Pour aujourd'hui sans heure précise: heure actuelle + 45 minutes
-      const nextHour = new Date(now);
-      nextHour.setHours(nextHour.getHours() + 0, 45, 0, 0);
-      targetDate = nextHour;
-    } else {
-      // Pour les autres jours sans heure: 10h du matin par défaut
-      targetDate.setHours(correctTimezone ? 9 : 10, 0, 0, 0);
-    }
-
-    return targetDate;
+  #parseDate(dateStr) {
+    const result = parseUserDate(dateStr, {
+      timezone: this.#config.timezone || 'Europe/Paris'
+    });
+    return result.status === 'ok' ? result.date : null;
   }
 
   /**
