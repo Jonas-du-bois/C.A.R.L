@@ -1,5 +1,5 @@
 import QRCode from 'qrcode';
-import { escapeHtml } from '../utils/Sanitizer.js';
+import { escapeHtml, safeFetch } from '../utils/Sanitizer.js';
 
 export class TelegramService {
   #botToken;
@@ -151,7 +151,7 @@ export class TelegramService {
 
     try {
       const url = `https://api.telegram.org/bot${this.#botToken}/getUpdates?offset=${this.#lastUpdateId + 1}&timeout=1`;
-      const response = await fetch(url);
+      const response = await safeFetch(url, {}, [this.#botToken]);
       const data = await response.json();
 
       if (!data.ok || !data.result?.length) {
@@ -288,7 +288,7 @@ export class TelegramService {
   async answerCallback(callbackQueryId, text = null) {
     try {
       const url = `https://api.telegram.org/bot${this.#botToken}/answerCallbackQuery`;
-      await fetch(url, {
+      await safeFetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -296,7 +296,7 @@ export class TelegramService {
           text: text,
           show_alert: !!text
         })
-      });
+      }, [this.#botToken]);
     } catch (error) {
       console.error('Failed to answer callback:', error);
     }
@@ -380,11 +380,11 @@ export class TelegramService {
         };
       }
 
-      const response = await fetch(url, {
+      const response = await safeFetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body)
-      });
+      }, [this.#botToken]);
 
       if (!response.ok) {
         const error = await response.text();
@@ -413,10 +413,10 @@ export class TelegramService {
       formData.append('photo', new Blob([qrImageBuffer], { type: 'image/png' }), 'qrcode.png');
 
       const url = `https://api.telegram.org/bot${this.#botToken}/sendPhoto`;
-      const response = await fetch(url, {
+      const response = await safeFetch(url, {
         method: 'POST',
         body: formData
-      });
+      }, [this.#botToken]);
 
       if (!response.ok) {
         const error = await response.text();

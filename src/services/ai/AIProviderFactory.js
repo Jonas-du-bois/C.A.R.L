@@ -1,3 +1,5 @@
+import { safeFetch } from '../../utils/Sanitizer.js';
+
 /**
  * AIProviderFactory - Factory pour les différents providers IA
  * 
@@ -40,7 +42,7 @@ class GeminiProvider extends AIProvider {
   async call(prompt, options = {}) {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent?key=${this.apiKey}`;
     
-    const response = await fetch(url, {
+    const response = await safeFetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -51,7 +53,7 @@ class GeminiProvider extends AIProvider {
           responseMimeType: "application/json"
         }
       })
-    });
+    }, [this.apiKey]);
 
     if (!response.ok) {
       const error = await response.json();
@@ -75,7 +77,7 @@ class GeminiProvider extends AIProvider {
 
 class OpenAIProvider extends AIProvider {
   async call(prompt, options = {}) {
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    const response = await safeFetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -93,7 +95,7 @@ class OpenAIProvider extends AIProvider {
         max_tokens: options.maxTokens ?? this.maxTokens,
         temperature: options.temperature ?? this.temperature
       })
-    });
+    }, [this.apiKey]);
 
     if (!response.ok) {
       const error = await response.json();
@@ -111,7 +113,7 @@ class OpenAIProvider extends AIProvider {
 
 class GroqProvider extends AIProvider {
   async call(prompt, options = {}) {
-    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    const response = await safeFetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -129,7 +131,7 @@ class GroqProvider extends AIProvider {
         max_tokens: options.maxTokens ?? this.maxTokens,
         temperature: options.temperature ?? this.temperature
       })
-    });
+    }, [this.apiKey]);
 
     if (!response.ok) {
       const error = await response.json();
