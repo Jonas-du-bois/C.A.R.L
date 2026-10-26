@@ -27,3 +27,8 @@
 **Vulnerability:** Denial of Service (DoS) via memory exhaustion in `GatekeeperHandler`. The handler stored user timestamps in an unbounded `Map` without cleanup, allowing an attacker to exhaust server memory by sending messages from many unique identifiers.
 **Learning:** Any stateful mechanism tracking user activity (like rate limits) must implement a cleanup strategy (TTL or periodic purge) to prevent unbounded growth.
 **Prevention:** Implemented a periodic `cleanup()` task in `GatekeeperHandler` that removes users with no recent activity every 5 minutes.
+
+## 2025-05-29 - Prevent API Key Leak in Error Objects
+**Vulnerability:** Raw `fetch` API error stack traces could leak API keys embedded in URLs (e.g., Gemini API, Telegram API) when a network error throws an exception containing the URL.
+**Learning:** When intercepting and sanitizing errors from native `fetch` calls, the thrown error can be a `DOMException` (e.g., `TimeoutError`, `AbortError`) where the `message` property is a read-only getter. Attempting to directly reassign `err.message` causes a strict mode crash. Furthermore, modifying an `Error` object's `message` property does not automatically update its `stack` trace string in V8.
+**Prevention:** Created a `safeFetch` wrapper that rigorously sanitizes both `err.message` and `err.stack` against a configurable list of secrets. Handled read-only getters by catching the reassignment exception and falling back to creating a new `Error` object with the original name and stack, throwing it carefully outside the `try/catch` block to preserve the correct control flow and error prototype chain.
