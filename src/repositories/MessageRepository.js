@@ -629,11 +629,13 @@ export class MessageRepository {
    * Statistiques globales
    */
   getGlobalStats() {
+    // ⚡ Bolt: Optimized query by reading pre-calculated values from contacts table
+    // instead of scanning the entire messages table (avoid full table scan)
     return this.#db.prepare(`
       SELECT
         (SELECT COUNT(*) FROM contacts) as total_contacts,
-        (SELECT COUNT(*) FROM messages WHERE direction = 'incoming') as total_messages_received,
-        (SELECT COUNT(*) FROM messages WHERE direction = 'outgoing') as total_messages_sent,
+        (SELECT COALESCE(SUM(total_messages_received), 0) FROM contacts) as total_messages_received,
+        (SELECT COALESCE(SUM(total_messages_sent), 0) FROM contacts) as total_messages_sent,
         (SELECT COUNT(*) FROM message_analysis) as total_analyzed,
         (SELECT COUNT(*) FROM errors) as total_errors,
         (SELECT SUM(tokens_used) FROM message_analysis) as total_tokens_used
@@ -644,10 +646,12 @@ export class MessageRepository {
    * Top contacts par nombre de messages
    */
   getTopContacts(limit = 10) {
+    // ⚡ Bolt: Optimized query by utilizing pre-calculated column values in the contacts table
+    // avoiding O(N^2) correlated subqueries on the messages table.
     return this.#db.prepare(`
       SELECT c.*, 
-        (SELECT COUNT(*) FROM messages m WHERE m.contact_id = c.id AND m.direction = 'incoming') as messages_received,
-        (SELECT COUNT(*) FROM messages m WHERE m.contact_id = c.id AND m.direction = 'outgoing') as messages_sent
+        c.total_messages_received as messages_received,
+        c.total_messages_sent as messages_sent
       FROM contacts c
       ORDER BY (c.total_messages_received + c.total_messages_sent) DESC
       LIMIT ?
