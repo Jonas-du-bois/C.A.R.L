@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
-import { sanitizePhoneNumber, sanitizeMessageContent, escapeHtml } from '../../src/utils/Sanitizer.js';
+import { sanitizePhoneNumber, sanitizeMessageContent, escapeHtml, safeFetch } from '../../src/utils/Sanitizer.js';
 
 describe('Sanitizer', () => {
   describe('sanitizePhoneNumber', () => {
@@ -100,6 +100,68 @@ describe('Sanitizer', () => {
     it('should not change safe strings', () => {
       const input = 'Hello World';
       assert.strictEqual(escapeHtml(input), input);
+    });
+  });
+
+  describe('safeFetch', () => {
+    it('should successfully redact sensitive tokens from Error', async () => {
+      const token = 'secret_token_123';
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = async () => {
+        throw new Error(`fetch failed to https://api.com/bot${token}/test`);
+      };
+
+      try {
+        await safeFetch(`https://api.com/bot${token}/test`, {}, [token]);
+        assert.fail('Should have thrown an error');
+      } catch (err) {
+        assert.ok(!err.message.includes(token));
+        assert.ok(err.message.includes('***REDACTED***'));
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    });
+
+    it('should handle read-only DOMException without crashing', async () => {
+      const token = 'another_secret_456';
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = async () => {
+        const err = new Error(`AbortError: Timeout for ${token}`);
+        err.name = 'AbortError';
+        // Simulate DOMException read-only message property
+        Object.defineProperty(err, 'message', {
+          value: `AbortError: Timeout for ${token}`,
+          writable: false
+        });
+        throw err;
+      };
+
+      try {
+        await safeFetch(`http://test.com/${token}`, {}, [token]);
+        assert.fail('Should have thrown an error');
+      } catch (err) {
+        assert.strictEqual(err.name, 'AbortError');
+        assert.ok(!err.message.includes(token));
+        assert.ok(err.message.includes('***REDACTED***'));
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    });
+
+    it('should not modify errors when no sensitive data is provided', async () => {
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = async () => {
+        throw new Error('Normal connection error');
+      };
+
+      try {
+        await safeFetch('http://test.com', {}, []);
+        assert.fail('Should have thrown an error');
+      } catch (err) {
+        assert.strictEqual(err.message, 'Normal connection error');
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
     });
   });
 });

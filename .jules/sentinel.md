@@ -27,3 +27,8 @@
 **Vulnerability:** Denial of Service (DoS) via memory exhaustion in `GatekeeperHandler`. The handler stored user timestamps in an unbounded `Map` without cleanup, allowing an attacker to exhaust server memory by sending messages from many unique identifiers.
 **Learning:** Any stateful mechanism tracking user activity (like rate limits) must implement a cleanup strategy (TTL or periodic purge) to prevent unbounded growth.
 **Prevention:** Implemented a periodic `cleanup()` task in `GatekeeperHandler` that removes users with no recent activity every 5 minutes.
+
+## 2026-10-27 - Prevent API Key Leaks in Network Exceptions
+**Vulnerability:** CRITICAL issue where native `fetch` network errors (e.g., timeouts, connection failures) throw exceptions whose `message` or `stack` often contain the request URL. Since `AIService`, `AIProviderFactory`, and `TelegramService` embedded API keys/tokens directly in URLs as query parameters or paths, these secrets could easily leak into logs or Telegram error notifications if the external APIs were unreachable.
+**Learning:** Error handling mechanisms can inadvertently become data exfiltration vectors. Any HTTP request containing sensitive data in the URL must have its exceptions sanitized before logging or returning to users.
+**Prevention:** Implemented and enforced a `safeFetch` wrapper in `src/utils/Sanitizer.js` that dynamically intercepts and redacts any provided sensitive tokens from the resulting `Error` object's message and stack properties, handling edge cases like read-only `DOMException`s natively thrown by `fetch`.
