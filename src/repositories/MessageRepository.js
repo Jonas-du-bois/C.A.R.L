@@ -376,29 +376,28 @@ export class MessageRepository {
       WHERE m.received_at BETWEEN ? AND ?
     `).get(startOfDay, endOfDay);
 
-    const byUrgency = this.#db.prepare(`
-      SELECT ma.urgency, COUNT(*) as count
+    // ⚡ Bolt: Combines multiple GROUP BY queries into a single query to avoid redundant JOINs
+    const combinedStats = this.#db.prepare(`
+      SELECT ma.category, ma.urgency, ma.sentiment, COUNT(*) as count
       FROM messages m
       JOIN message_analysis ma ON m.id = ma.message_id
       WHERE m.received_at BETWEEN ? AND ?
-      GROUP BY ma.urgency
+      GROUP BY ma.category, ma.urgency, ma.sentiment
     `).all(startOfDay, endOfDay);
 
-    const byCategory = this.#db.prepare(`
-      SELECT ma.category, COUNT(*) as count
-      FROM messages m
-      JOIN message_analysis ma ON m.id = ma.message_id
-      WHERE m.received_at BETWEEN ? AND ?
-      GROUP BY ma.category
-    `).all(startOfDay, endOfDay);
+    const byUrgency = {};
+    const byCategory = {};
+    const bySentiment = {};
 
-    const bySentiment = this.#db.prepare(`
-      SELECT ma.sentiment, COUNT(*) as count
-      FROM messages m
-      JOIN message_analysis ma ON m.id = ma.message_id
-      WHERE m.received_at BETWEEN ? AND ?
-      GROUP BY ma.sentiment
-    `).all(startOfDay, endOfDay);
+    for (const row of combinedStats) {
+      const urg = String(row.urgency);
+      const cat = String(row.category);
+      const sent = String(row.sentiment);
+
+      byUrgency[urg] = (byUrgency[urg] || 0) + row.count;
+      byCategory[cat] = (byCategory[cat] || 0) + row.count;
+      bySentiment[sent] = (bySentiment[sent] || 0) + row.count;
+    }
 
     const errors = this.#db.prepare(`
       SELECT COUNT(*) as count FROM errors WHERE occurred_at BETWEEN ? AND ?
@@ -413,9 +412,9 @@ export class MessageRepository {
       total_received: stats?.total_received || 0,
       total_sent: stats?.total_sent || 0,
       unique_contacts: stats?.unique_contacts || 0,
-      by_urgency: Object.fromEntries(byUrgency.map(r => [r.urgency, r.count])),
-      by_category: Object.fromEntries(byCategory.map(r => [r.category, r.count])),
-      by_sentiment: Object.fromEntries(bySentiment.map(r => [r.sentiment, r.count])),
+      by_urgency: byUrgency,
+      by_category: byCategory,
+      by_sentiment: bySentiment,
       errors_count: errors?.count || 0,
       tokens_used: tokens?.total || 0
     };
@@ -589,21 +588,25 @@ export class MessageRepository {
       FROM messages WHERE received_at >= ?
     `).get(since);
 
-    const byCategory = this.#db.prepare(`
-      SELECT ma.category, COUNT(*) as count
+    // ⚡ Bolt: Combines multiple GROUP BY queries into a single query to avoid redundant JOINs
+    const combinedStats = this.#db.prepare(`
+      SELECT ma.category, ma.urgency, COUNT(*) as count
       FROM messages m
       JOIN message_analysis ma ON m.id = ma.message_id
       WHERE m.received_at >= ?
-      GROUP BY ma.category
+      GROUP BY ma.category, ma.urgency
     `).all(since);
 
-    const byUrgency = this.#db.prepare(`
-      SELECT ma.urgency, COUNT(*) as count
-      FROM messages m
-      JOIN message_analysis ma ON m.id = ma.message_id
-      WHERE m.received_at >= ?
-      GROUP BY ma.urgency
-    `).all(since);
+    const byCategory = {};
+    const byUrgency = {};
+
+    for (const row of combinedStats) {
+      const cat = String(row.category);
+      const urg = String(row.urgency);
+
+      byCategory[cat] = (byCategory[cat] || 0) + row.count;
+      byUrgency[urg] = (byUrgency[urg] || 0) + row.count;
+    }
 
     const errors = this.#db.prepare(`
       SELECT COUNT(*) as count FROM errors WHERE occurred_at >= ?
@@ -613,8 +616,8 @@ export class MessageRepository {
       received: totals?.received || 0,
       sent: totals?.sent || 0,
       contacts: totals?.contacts || 0,
-      byCategory: Object.fromEntries(byCategory.map(r => [r.category, r.count])),
-      byUrgency: Object.fromEntries(byUrgency.map(r => [r.urgency, r.count])),
+      byCategory: byCategory,
+      byUrgency: byUrgency,
       errors: errors?.count || 0
     };
   }
