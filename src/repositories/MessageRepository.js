@@ -644,10 +644,13 @@ export class MessageRepository {
    * Top contacts par nombre de messages
    */
   getTopContacts(limit = 10) {
+    // ⚡ Bolt: Removed expensive O(N*M) correlated subqueries for message counts.
+    // Instead, using the pre-calculated total_messages_received and total_messages_sent
+    // columns from the contacts table and aliasing them for backward compatibility.
     return this.#db.prepare(`
       SELECT c.*, 
-        (SELECT COUNT(*) FROM messages m WHERE m.contact_id = c.id AND m.direction = 'incoming') as messages_received,
-        (SELECT COUNT(*) FROM messages m WHERE m.contact_id = c.id AND m.direction = 'outgoing') as messages_sent
+        c.total_messages_received as messages_received,
+        c.total_messages_sent as messages_sent
       FROM contacts c
       ORDER BY (c.total_messages_received + c.total_messages_sent) DESC
       LIMIT ?
