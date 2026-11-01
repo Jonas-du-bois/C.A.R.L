@@ -30,3 +30,7 @@
 ## 2026-03-02 - Caching External API Calls for Frequent Schedule Lookups
 **Learning:** `CalendarService.getUpcomingEvents` was calling the Google Calendar API on every request, even for subsequent checks within the same conversation session. This caused significant latency and redundant API usage. By implementing a short-lived (5-minute) cache with a default fetch range (14 days), multiple queries (e.g., availability check -> slot proposal -> conflict check) can be served from memory.
 **Action:** Implement `eventsCache` in `CalendarService` with invalidation on write operations (`createEvent`, `createTask`). This reduces N API calls to 1 per 5 minutes for schedule-related queries, improving response time and reducing quota usage.
+
+## 2026-03-03 - Joint Aggregation to Reduce JOIN Overhead
+**Learning:** Querying SQLite for multiple independent categorical aggregates (e.g., `GROUP BY category`, `GROUP BY urgency`) across the same `JOIN` dataset using separate queries incurs repetitive `JOIN` overhead.
+**Action:** Execute a single query grouping by all target categories jointly (`GROUP BY category, urgency, sentiment`) and dynamically aggregate the results in JavaScript. This minimizes database roundtrips and file reads, reducing query time by ~20-38% in benchmarks. Ensure `null` keys are correctly cast to strings if replacing `Object.fromEntries()`.
