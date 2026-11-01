@@ -28,3 +28,42 @@ export function escapeHtml(unsafe) {
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#039;");
 }
+
+/**
+ * A safe wrapper for fetch that prevents leaking sensitive data like tokens
+ * in error messages when exceptions (e.g., network errors, DOMExceptions) occur.
+ */
+export async function safeFetch(url, options = {}, secretToken = null) {
+  try {
+    return await fetch(url, options);
+  } catch (err) {
+    if (!secretToken) {
+      throw err;
+    }
+
+    let escapedToken = '';
+    for (const char of secretToken) {
+      if ('\\^$*+?.()|{}[]'.includes(char)) {
+        escapedToken += '\\';
+      }
+      escapedToken += char;
+    }
+    const tokenRegex = new RegExp(escapedToken, 'g');
+
+    let newErr = err;
+    try {
+      if (err.message) {
+        err.message = err.message.replace(tokenRegex, '***');
+      }
+    } catch (e) {
+      // Handles cases where message is a read-only getter, e.g. DOMException
+      newErr = new Error(err.message.replace(tokenRegex, '***'));
+      newErr.name = err.name;
+    }
+
+    if (newErr.stack) {
+      newErr.stack = newErr.stack.replace(tokenRegex, '***');
+    }
+    throw newErr;
+  }
+}
