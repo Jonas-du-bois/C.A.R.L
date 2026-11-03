@@ -27,3 +27,8 @@
 **Vulnerability:** Denial of Service (DoS) via memory exhaustion in `GatekeeperHandler`. The handler stored user timestamps in an unbounded `Map` without cleanup, allowing an attacker to exhaust server memory by sending messages from many unique identifiers.
 **Learning:** Any stateful mechanism tracking user activity (like rate limits) must implement a cleanup strategy (TTL or periodic purge) to prevent unbounded growth.
 **Prevention:** Implemented a periodic `cleanup()` task in `GatekeeperHandler` that removes users with no recent activity every 5 minutes.
+
+## $(date +%Y-%m-%d) - Fetch Error API Key Leak
+**Vulnerability:** API keys and bot tokens embedded in URLs (e.g., Telegram and Gemini API endpoints) were susceptible to leaking in log files or console output. When the native `fetch()` function encounters a network failure, the resulting `Error` object frequently includes the request URL within its `message` or `stack` trace.
+**Learning:** Native `fetch` errors can inadvertently expose sensitive data if the secrets are transmitted via URL parameters or path segments. Simply throwing or logging these unmodified errors compromises the security of the application.
+**Prevention:** Created a `safeFetch` wrapper around the global `fetch` function that intercepts thrown exceptions and rigorously scrubs them using regex sanitization (`/(key=|bot|Bearer\s+)[^\/\s&?]+/gi`) before re-throwing. All internal services executing external requests must route through this secure wrapper.

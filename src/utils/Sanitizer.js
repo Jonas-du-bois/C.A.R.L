@@ -28,3 +28,36 @@ export function escapeHtml(unsafe) {
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#039;");
 }
+
+/**
+ * A safe wrapper for the global fetch function.
+ * Ensures that sensitive keys and tokens (e.g. API keys, bot tokens)
+ * are not leaked in the error message or stack trace if a network error occurs.
+ */
+export async function safeFetch(url, options = {}) {
+  try {
+    return await fetch(url, options);
+  } catch (err) {
+    const sanitizeStr = (str) => {
+      if (typeof str !== 'string') return str;
+      return str.replace(/(key=|bot|Bearer\s+)[^\/\s&?]+/gi, '$1***');
+    };
+
+    const sanitizedMsg = sanitizeStr(err.message);
+    let newErr;
+    try {
+      err.message = sanitizedMsg;
+      if (err.stack) {
+        err.stack = sanitizeStr(err.stack);
+      }
+      newErr = err;
+    } catch (e) {
+      newErr = new Error(sanitizedMsg);
+      newErr.name = err.name;
+      if (err.stack) {
+        newErr.stack = sanitizeStr(err.stack);
+      }
+    }
+    throw newErr;
+  }
+}
