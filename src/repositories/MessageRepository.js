@@ -376,29 +376,29 @@ export class MessageRepository {
       WHERE m.received_at BETWEEN ? AND ?
     `).get(startOfDay, endOfDay);
 
-    const byUrgency = this.#db.prepare(`
-      SELECT ma.urgency, COUNT(*) as count
+    // ⚡ Bolt: Optimized by combining multiple GROUP BY queries on identical joins into a single query
+    const aggregations = this.#db.prepare(`
+      SELECT ma.urgency, ma.category, ma.sentiment, COUNT(*) as count
       FROM messages m
       JOIN message_analysis ma ON m.id = ma.message_id
       WHERE m.received_at BETWEEN ? AND ?
-      GROUP BY ma.urgency
+      GROUP BY ma.urgency, ma.category, ma.sentiment
     `).all(startOfDay, endOfDay);
 
-    const byCategory = this.#db.prepare(`
-      SELECT ma.category, COUNT(*) as count
-      FROM messages m
-      JOIN message_analysis ma ON m.id = ma.message_id
-      WHERE m.received_at BETWEEN ? AND ?
-      GROUP BY ma.category
-    `).all(startOfDay, endOfDay);
+    const byUrgency = {};
+    const byCategory = {};
+    const bySentiment = {};
 
-    const bySentiment = this.#db.prepare(`
-      SELECT ma.sentiment, COUNT(*) as count
-      FROM messages m
-      JOIN message_analysis ma ON m.id = ma.message_id
-      WHERE m.received_at BETWEEN ? AND ?
-      GROUP BY ma.sentiment
-    `).all(startOfDay, endOfDay);
+    for (const row of aggregations) {
+      const { urgency, category, sentiment, count } = row;
+      // Object.fromEntries stringifies null/undefined to 'null'/'undefined', so we cast implicitly via String() to maintain backward compatibility
+      const uStr = String(urgency);
+      byUrgency[uStr] = (byUrgency[uStr] || 0) + count;
+      const cStr = String(category);
+      byCategory[cStr] = (byCategory[cStr] || 0) + count;
+      const sStr = String(sentiment);
+      bySentiment[sStr] = (bySentiment[sStr] || 0) + count;
+    }
 
     const errors = this.#db.prepare(`
       SELECT COUNT(*) as count FROM errors WHERE occurred_at BETWEEN ? AND ?
@@ -413,9 +413,9 @@ export class MessageRepository {
       total_received: stats?.total_received || 0,
       total_sent: stats?.total_sent || 0,
       unique_contacts: stats?.unique_contacts || 0,
-      by_urgency: Object.fromEntries(byUrgency.map(r => [r.urgency, r.count])),
-      by_category: Object.fromEntries(byCategory.map(r => [r.category, r.count])),
-      by_sentiment: Object.fromEntries(bySentiment.map(r => [r.sentiment, r.count])),
+      by_urgency: byUrgency,
+      by_category: byCategory,
+      by_sentiment: bySentiment,
       errors_count: errors?.count || 0,
       tokens_used: tokens?.total || 0
     };
