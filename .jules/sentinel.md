@@ -27,3 +27,8 @@
 **Vulnerability:** Denial of Service (DoS) via memory exhaustion in `GatekeeperHandler`. The handler stored user timestamps in an unbounded `Map` without cleanup, allowing an attacker to exhaust server memory by sending messages from many unique identifiers.
 **Learning:** Any stateful mechanism tracking user activity (like rate limits) must implement a cleanup strategy (TTL or periodic purge) to prevent unbounded growth.
 **Prevention:** Implemented a periodic `cleanup()` task in `GatekeeperHandler` that removes users with no recent activity every 5 minutes.
+
+## 2025-05-29 - AI Output Sanitization
+**Vulnerability:** Fetch unhandled network errors leaked full URL, including API keys and bot tokens in error message and error stack.
+**Learning:** In Node.js, uncaught fetch network and abort errors contain the full URL as part of the error message and the stack, leaking secrets if logged.
+**Prevention:** Applied `safeFetch` wrapper to sanitize error messages and stacks by redacting API keys from `(key|token|api_key|secret)=` query parameters and `bot[^/]+` path segments.
