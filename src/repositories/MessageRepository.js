@@ -376,29 +376,35 @@ export class MessageRepository {
       WHERE m.received_at BETWEEN ? AND ?
     `).get(startOfDay, endOfDay);
 
-    const byUrgency = this.#db.prepare(`
-      SELECT ma.urgency, COUNT(*) as count
+    // ⚡ Bolt: Consolidated separate GROUP BY queries into a single joint query
+    // Avoids redundant JOINs and traversals of the same dataset
+    const allGroups = this.#db.prepare(`
+      SELECT ma.urgency, ma.category, ma.sentiment, COUNT(*) as count
       FROM messages m
       JOIN message_analysis ma ON m.id = ma.message_id
       WHERE m.received_at BETWEEN ? AND ?
-      GROUP BY ma.urgency
+      GROUP BY ma.urgency, ma.category, ma.sentiment
     `).all(startOfDay, endOfDay);
 
-    const byCategory = this.#db.prepare(`
-      SELECT ma.category, COUNT(*) as count
-      FROM messages m
-      JOIN message_analysis ma ON m.id = ma.message_id
-      WHERE m.received_at BETWEEN ? AND ?
-      GROUP BY ma.category
-    `).all(startOfDay, endOfDay);
+    const byUrgencyObj = {};
+    const byCategoryObj = {};
+    const bySentimentObj = {};
 
-    const bySentiment = this.#db.prepare(`
-      SELECT ma.sentiment, COUNT(*) as count
-      FROM messages m
-      JOIN message_analysis ma ON m.id = ma.message_id
-      WHERE m.received_at BETWEEN ? AND ?
-      GROUP BY ma.sentiment
-    `).all(startOfDay, endOfDay);
+    for (const row of allGroups) {
+      const count = row.count;
+      const u = String(row.urgency);
+      const c = String(row.category);
+      const s = String(row.sentiment);
+
+      if (row.urgency !== null && row.urgency !== undefined) byUrgencyObj[u] = (byUrgencyObj[u] || 0) + count;
+      else byUrgencyObj['null'] = (byUrgencyObj['null'] || 0) + count; // To preserve old behavior where nulls were mapped to string 'null'
+
+      if (row.category !== null && row.category !== undefined) byCategoryObj[c] = (byCategoryObj[c] || 0) + count;
+      else byCategoryObj['null'] = (byCategoryObj['null'] || 0) + count;
+
+      if (row.sentiment !== null && row.sentiment !== undefined) bySentimentObj[s] = (bySentimentObj[s] || 0) + count;
+      else bySentimentObj['null'] = (bySentimentObj['null'] || 0) + count;
+    }
 
     const errors = this.#db.prepare(`
       SELECT COUNT(*) as count FROM errors WHERE occurred_at BETWEEN ? AND ?
@@ -413,9 +419,9 @@ export class MessageRepository {
       total_received: stats?.total_received || 0,
       total_sent: stats?.total_sent || 0,
       unique_contacts: stats?.unique_contacts || 0,
-      by_urgency: Object.fromEntries(byUrgency.map(r => [r.urgency, r.count])),
-      by_category: Object.fromEntries(byCategory.map(r => [r.category, r.count])),
-      by_sentiment: Object.fromEntries(bySentiment.map(r => [r.sentiment, r.count])),
+      by_urgency: byUrgencyObj,
+      by_category: byCategoryObj,
+      by_sentiment: bySentimentObj,
       errors_count: errors?.count || 0,
       tokens_used: tokens?.total || 0
     };
@@ -589,21 +595,30 @@ export class MessageRepository {
       FROM messages WHERE received_at >= ?
     `).get(since);
 
-    const byCategory = this.#db.prepare(`
-      SELECT ma.category, COUNT(*) as count
+    // ⚡ Bolt: Consolidated separate GROUP BY queries into a single joint query
+    // Avoids redundant JOINs and traversals of the same dataset
+    const allGroups = this.#db.prepare(`
+      SELECT ma.category, ma.urgency, COUNT(*) as count
       FROM messages m
       JOIN message_analysis ma ON m.id = ma.message_id
       WHERE m.received_at >= ?
-      GROUP BY ma.category
+      GROUP BY ma.category, ma.urgency
     `).all(since);
 
-    const byUrgency = this.#db.prepare(`
-      SELECT ma.urgency, COUNT(*) as count
-      FROM messages m
-      JOIN message_analysis ma ON m.id = ma.message_id
-      WHERE m.received_at >= ?
-      GROUP BY ma.urgency
-    `).all(since);
+    const byCategoryObj = {};
+    const byUrgencyObj = {};
+
+    for (const row of allGroups) {
+      const count = row.count;
+      const c = String(row.category);
+      const u = String(row.urgency);
+
+      if (row.category !== null && row.category !== undefined) byCategoryObj[c] = (byCategoryObj[c] || 0) + count;
+      else byCategoryObj['null'] = (byCategoryObj['null'] || 0) + count;
+
+      if (row.urgency !== null && row.urgency !== undefined) byUrgencyObj[u] = (byUrgencyObj[u] || 0) + count;
+      else byUrgencyObj['null'] = (byUrgencyObj['null'] || 0) + count;
+    }
 
     const errors = this.#db.prepare(`
       SELECT COUNT(*) as count FROM errors WHERE occurred_at >= ?
@@ -613,8 +628,8 @@ export class MessageRepository {
       received: totals?.received || 0,
       sent: totals?.sent || 0,
       contacts: totals?.contacts || 0,
-      byCategory: Object.fromEntries(byCategory.map(r => [r.category, r.count])),
-      byUrgency: Object.fromEntries(byUrgency.map(r => [r.urgency, r.count])),
+      byCategory: byCategoryObj,
+      byUrgency: byUrgencyObj,
       errors: errors?.count || 0
     };
   }
