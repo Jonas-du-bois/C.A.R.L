@@ -28,3 +28,47 @@ export function escapeHtml(unsafe) {
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#039;");
 }
+
+/**
+ * A wrapper around fetch that redacts sensitive information (API keys, Telegram bot tokens)
+ * from error messages, stacks, and causes when fetch throws.
+ */
+export async function safeFetch(url, options = {}) {
+  try {
+    return await fetch(url, options);
+  } catch (error) {
+    let safeError = error;
+    // Matches standard Telegram bot tokens and generic URL keys
+    const sensitivePattern = /(bot\d+:[a-zA-Z0-9_-]+)|(key=[a-zA-Z0-9_-]+)/gi;
+
+    try {
+      error.message = error.message.replace(sensitivePattern, '***REDACTED***');
+      if (error.stack) {
+        error.stack = error.stack.replace(sensitivePattern, '***REDACTED***');
+      }
+    } catch (e) {
+      // DOMExceptions (e.g. TimeoutError/AbortError) have read-only 'message' properties in strict mode/Node.js
+      safeError = new Error(error.message.replace(sensitivePattern, '***REDACTED***'));
+      safeError.name = error.name;
+      if (error.stack) {
+        safeError.stack = error.stack.replace(sensitivePattern, '***REDACTED***');
+      }
+      if (error.cause) {
+        safeError.cause = error.cause;
+      }
+    }
+
+    if (safeError.cause && safeError.cause.message) {
+      try {
+        safeError.cause.message = safeError.cause.message.replace(sensitivePattern, '***REDACTED***');
+      } catch (e) {
+        const safeCause = new Error(safeError.cause.message.replace(sensitivePattern, '***REDACTED***'));
+        safeCause.name = safeError.cause.name;
+        if (safeError.cause.stack) safeCause.stack = safeError.cause.stack.replace(sensitivePattern, '***REDACTED***');
+        safeError.cause = safeCause;
+      }
+    }
+
+    throw safeError;
+  }
+}
