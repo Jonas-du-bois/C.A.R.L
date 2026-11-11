@@ -1,6 +1,6 @@
-import { describe, it } from 'node:test';
+import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert';
-import { sanitizePhoneNumber, sanitizeMessageContent, escapeHtml } from '../../src/utils/Sanitizer.js';
+import { sanitizePhoneNumber, sanitizeMessageContent, escapeHtml, safeFetch } from '../../src/utils/Sanitizer.js';
 
 describe('Sanitizer', () => {
   describe('sanitizePhoneNumber', () => {
@@ -100,6 +100,63 @@ describe('Sanitizer', () => {
     it('should not change safe strings', () => {
       const input = 'Hello World';
       assert.strictEqual(escapeHtml(input), input);
+    });
+  });
+
+  describe('safeFetch', () => {
+    let originalFetch;
+
+    beforeEach(() => {
+      originalFetch = global.fetch;
+    });
+
+    afterEach(() => {
+      global.fetch = originalFetch;
+    });
+
+    it('should return successful response', async () => {
+      global.fetch = async () => new Response('OK');
+      const { safeFetch } = await import('../../src/utils/Sanitizer.js');
+      const response = await safeFetch('https://example.com');
+      assert.strictEqual(await response.text(), 'OK');
+    });
+
+    it('should sanitize regular Error messages and stack traces', async () => {
+      global.fetch = async () => {
+        const err = new Error('Failed to fetch from https://api.telegram.org/botMY_SECRET_TOKEN/getUpdates');
+        err.stack = 'Error: Failed to fetch from https://api.telegram.org/botMY_SECRET_TOKEN/getUpdates\n    at Object.test';
+        throw err;
+      };
+
+      const { safeFetch } = await import('../../src/utils/Sanitizer.js');
+
+      try {
+        await safeFetch('https://api.telegram.org/botMY_SECRET_TOKEN/getUpdates');
+        assert.fail('Should have thrown');
+      } catch (err) {
+        assert.strictEqual(err.message, 'Failed to fetch from https://api.telegram.org/bot***/getUpdates');
+        assert.ok(err.stack.includes('bot***'));
+        assert.ok(!err.stack.includes('MY_SECRET_TOKEN'));
+      }
+    });
+
+    it('should sanitize DOMException read-only messages', async () => {
+      global.fetch = async () => {
+        // DOMException message is read-only
+        const err = new DOMException('AbortError with https://api.com?key=SECRET_KEY');
+        throw err;
+      };
+
+      const { safeFetch } = await import('../../src/utils/Sanitizer.js');
+
+      try {
+        await safeFetch('https://example.com');
+        assert.fail('Should have thrown');
+      } catch (err) {
+        // The wrapper should have created a new Error object
+        assert.strictEqual(err.message, 'AbortError with https://api.com?key=***');
+        assert.strictEqual(err.name, 'Error'); // Since it's a generic fallback Error
+      }
     });
   });
 });
