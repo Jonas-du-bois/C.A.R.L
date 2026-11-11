@@ -27,3 +27,8 @@
 **Vulnerability:** Denial of Service (DoS) via memory exhaustion in `GatekeeperHandler`. The handler stored user timestamps in an unbounded `Map` without cleanup, allowing an attacker to exhaust server memory by sending messages from many unique identifiers.
 **Learning:** Any stateful mechanism tracking user activity (like rate limits) must implement a cleanup strategy (TTL or periodic purge) to prevent unbounded growth.
 **Prevention:** Implemented a periodic `cleanup()` task in `GatekeeperHandler` that removes users with no recent activity every 5 minutes.
+
+## 2026-11-11 - Fetch Error API Key Leak
+**Vulnerability:** API keys and tokens could be leaked in error messages and stack traces if native `fetch` throws an exception (e.g. `DOMException` on abort or connection error).
+**Learning:** The native `fetch` can throw errors containing URLs in their messages, exposing sensitive query parameters or path segments. Additionally, some errors like `DOMException` have read-only properties that require careful handling during sanitization.
+**Prevention:** Created and enforced the use of a `safeFetch` wrapper in `Sanitizer.js` that catches all exceptions, sanitizes the message and stack trace using regex `/(bot|key=)[^&/\s]+/g`, and safely re-throws them, handling read-only `DOMException` properties correctly.
